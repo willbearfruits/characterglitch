@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0}
+body{background:#06050a;overflow:hidden;cursor:none}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+const CELL=10;
+let W,H,cols,rows;
+let trail,age,dir,density,pulse;
+let mx=0.5,my=0.5;
+let t=0;
+let hyphae=[];
+
+// directional line-drawing characters
+const HDIR={
+  0:'\u2500',1:'\u2571',2:'\u2502',3:'\u2572',
+  4:'\u2500',5:'\u2571',6:'\u2502',7:'\u2572'
+};
+const BRANCH='\u251C\u2524\u252C\u2534\u253C\u256C\u2560\u2563';
+const ALIVE='\u2219\u2022\u25CF\u25C9\u25CE';
+const SPORE='\u00B7\u2027\u2059\u205A\u205B';
+const DECAY='\u2591\u2592\u2593\u2588\u2593\u2592\u2591';
+const FRUIT='\u2740\u2741\u273F\u2744\u2746\u2749\u274B';
+const NODE='\u25C6\u25C7\u2B22\u2B23\u2726\u2727\u2728\u2729';
+
+function resize(){
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=W;cv.height=H;
+  cols=Math.floor(W/(CELL*0.58));
+  rows=Math.floor(H/CELL);
+  const sz=cols*rows;
+  trail=new Float32Array(sz);
+  age=new Float32Array(sz);
+  dir=new Int8Array(sz).fill(-1);
+  density=new Float32Array(sz);
+  pulse=new Float32Array(sz);
+  ctx.font=CELL+'px Courier New';
+  ctx.textBaseline='top';
+  hyphae=[];
+  // initial spores
+  for(let i=0;i<12;i++) spawnSpore(Math.random(),Math.random());
+}
+
+function spawnSpore(sx,sy){
+  const count=3+Math.floor(Math.random()*5);
+  for(let i=0;i<count;i++){
+    hyphae.push({
+      x:sx*cols,
+      y:sy*rows,
+      angle:Math.random()*Math.PI*2,
+      energy:120+Math.random()*200,
+      speed:0.3+Math.random()*0.4,
+      branchProb:0.008+Math.random()*0.012,
+      age:0,
+      gen:0
+    });
+  }
+  // mark origin
+  const gc=Math.floor(sx*cols),gr=Math.floor(sy*rows);
+  if(gc>=0&&gc<cols&&gr>=0&&gr<rows){
+    const idx=gr*cols+gc;
+    density[idx]=10;
+    trail[idx]=5;
+  }
+}
+
+function frame(){
+  t+=0.02;
+  const cw=CELL*0.58;
+  const mxg=mx*cols,myg=my*rows;
+
+  // GROW HYPHAE
+  const newHyphae=[];
+  for(let h=0;h<hyphae.length;h++){
+    const hy=hyphae[h];
+    if(hy.energy<=0)continue;
+    hy.age++;
+    hy.energy-=0.4;
+
+    // chemotaxis: bend toward mouse
+    const dx=mxg-hy.x,dy=myg-hy.y;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist>1){
+      const targetAngle=Math.atan2(dy,dx);
+      let diff=targetAngle-hy.angle;
+      while(diff>Math.PI)diff-=2*Math.PI;
+      while(diff<-Math.PI)diff+=2*Math.PI;
+      const attraction=Math.min(0.08,2/dist);
+      hy.angle+=diff*attraction;
+    }
+
+    // random wander
+    hy.angle+=( Math.random()-0.5)*0.6;
+
+    // avoid edges gently
+    if(hy.x<3)hy.angle+= 0.1;
+    if(hy.x>cols-3)hy.angle-=0.1;
+    if(hy.y<3)hy.angle=Math.abs(hy.angle)<Math.PI/2?hy.angle:hy.angle+0.1;
+    if(hy.y>rows-3)hy.angle+=-0.1;
+
+    // follow existing trails slightly (stigmergy)
+    const lookX=Math.floor(hy.x+Math.cos(hy.angle)*2);
+    const lookY=Math.floor(hy.y+Math.sin(hy.angle)*2);
+    if(lookX>=0&&lookX<cols&&lookY>=0&&lookY<rows){
+      const li=lookY*cols+lookX;
+      if(trail[li]>0.5&&density[li]<3){
+        hy.angle+=(Math.random()-0.5)*0.3;
+        hy.energy+=0.2;
+      }
+    }
+
+    // move
+    hy.x+=Math.cos(hy.angle)*hy.speed;
+    hy.y+=Math.sin(hy.angle)*hy.speed;
+
+    const gc=Math.floor(hy.x),gr=Math.floor(hy.y);
+    if(gc<0||gc>=cols||gr<0||gr>=rows){hy.energy=0;continue;}
+
+    const idx=gr*cols+gc;
+    
+    // deposit trail
+    trail[idx]=Math.min(trail[idx]+1.2,8);
+    age[idx]=0;
+    density[idx]+=0.15;
+
+    // direction for character selection
+    const d8=Math.round(((hy.angle%(2*Math.PI))+(2*Math.PI))%(2*Math.PI)/(Math.PI/4))%8;
+    dir[idx]=d8;
+
+    // fusion: hitting dense area = create node, die, release energy
+    if(density[idx]>4&&hy.age>20){
+      density[idx]+=3;
+      trail[idx]=8;
+      pulse[idx]=3;
+      hy.energy=0;
+      // spawn new directions from node
+      if(hyphae.length+newHyphae.length<2000){
+        for(let b=0;b<2;b++){
+          newHyphae.push({
+            x:hy.x,y:hy.y,
+            angle:hy.angle+Math.PI/2*(b===0?1:-1)+Math.random()*0.5,
+            energy:60+Math.random()*60,
+            speed:0.25+Math.random()*0.3,
+            branchProb:0.006,age:0,gen:hy.gen+1
+          });
+        }
+      }
+      continue;
+    }
+
+    // branching
+    if(Math.random()<hy.branchProb&&hy.energy>30&&hyphae.length+newHyphae.length<2000&&hy.gen<8){
+      const side=Math.random()<0.5?1:-1;
+      newHyphae.push({
+        x:hy.x,y:hy.y,
+        angle:hy.angle+side*(0.4+Math.random()*0.8),
+        energy:hy.energy*0.4,
+        speed:hy.speed*0.85,
+        branchProb:hy.branchProb*0.7,
+        age:0,gen:hy.gen+1
+      });
+      hy.energy*=0.7;
+    }
+
+    if(hy.energy>0)newHyphae.push(hy);
+  }
+  hyphae=newHyphae;
+
+  // respawn if population drops
+  if(hyphae.length<50&&Math.random()<0.05){
+    spawnSpore(Math.random(),Math.random());
+  }
+  // spawn near mouse occasionally  
+  if(Math.random()<0.01){
+    spawnSpore(mx+Math.random()*0.05-0.025,my+Math.random()*0.05-0.025);
+  }
+
+  // age and decay
+  for(let i=0;i<cols*rows;i++){
+    age[i]+=0.008;
+    trail[i]*=0.997;
+    density[i]*=0.999;
+    // pulse propagation
+    if(pulse[i]>0.1){
+      pulse[i]*=0.92;
+      // spread to neighbors
+      const r2=Math.floor(i/cols),c2=i%cols;
+      const spread=pulse[i]*0.02;
+      if(c2>0&&trail[i-1]>0.3)pulse[i-1]=Math.max(pulse[i-1],spread);
+      if(c2<cols-1&&trail[i+1]>0.3)pulse[i+1]=Math.max(pulse[i+1],spread);
+      if(r2>0&&trail[i-cols]>0.3)pulse[i-cols]=Math.max(pulse[i-cols],spread);
+      if(r2<rows-1&&trail[i+cols]>0.3)pulse[i+cols]=Math.max(pulse[i+cols],spread);
+    }
+  }
+
+  // periodic nutrient pulses from nodes
+  if(Math.floor(t*10)%30===0){
+    for(let i=0;i<cols*rows;i++){
+      if(density[i]>5)pulse[i]=Math.max(pulse[i],2);
+    }
+  }
+
+  // RENDER
+  ctx.fillStyle='#06050a';
+  ctx.fillRect(0,0,W,H);
+
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const idx=r*cols+c;
+      const v=trail[idx];
+      if(v<0.08)continue;
+
+      const a=age[idx];
+      const d=density[idx];
+      const p=pulse[idx];
+      const norm=Math.min(v/6,1);
+
+      // CHARACTER based on type
+      let ch;
+      if(d>6){
+        // dense node
+        ch=NODE[Math.floor((t*2+c*0.3)%NODE.length)];
+      }else if(d>3){
+        // junction
+        ch=BRANCH[Math.floor(d)%BRANCH.length];
+      }else if(a<0.05){
+        // fresh tip
+        ch=ALIVE[Math.floor(norm*ALIVE.length)%ALIVE.length];
+      }else if(a>2&&norm<0.3){
+        // decaying
+        ch=SPORE[Math.floor(a)%SPORE.length];
+      }else if(a>3&&Math.random()<0.01){
+        // rare fruiting body
+        ch=FRUIT[Math.floor(Math.random()*FRUIT.length)];
+      }else{
+        // normal hypha - directional
+        const dd=dir[idx];
+        ch=dd>=0?HDIR[dd]:'\u2500';
+      }
+
+      // COLOR
+      let cr,cg,cb;
+      
+      if(a<0.1){
+        // living tip: bright bioluminescent
+        cr=180+p*30;cg=240+p*15;cb=200+p*20;
+      }else if(d>5){
+        // node: warm amber pulse
+        const pp=Math.sin(t*4+c*0.2+r*0.3)*0.3+0.7;
+        cr=200*pp+p*40;cg=140*pp+p*20;cb=60*pp+p*30;
+      }else if(a<1){
+        // young: pale green-blue
+        const fade=1-a;
+        cr=40+fade*60+p*50;cg=90+fade*100+p*40;cb=80+fade*80+p*35;
+      }else if(a<3){
+        // mature: muted earth tones
+        const fade=1-(a-1)/2;
+        cr=60*fade+p*40;cg=50*fade+p*30;cb=35*fade+p*25;
+      }else{
+        // old: fading to near-black
+        const fade=Math.max(0,1-(a-3)/4);
+        cr=25*fade+p*20;cg=18*fade+p*15;cb=15*fade+p*12;
+      }
+
+      // brightness from trail intensity
+      const bright=0.3+norm*0.7;
+      cr=Math.min(255,Math.floor(cr*bright));
+      cg=Math.min(255,Math.floor(cg*bright));
+      cb=Math.min(255,Math.floor(cb*bright));
+
+      if(cr<3&&cg<3&&cb<3)continue;
+
+      ctx.fillStyle=`rgb(${cr},${cg},${cb})`;
+      ctx.fillText(ch,c*cw,r*CELL);
+    }
+  }
+
+  // cursor: spore halo
+  const curX=mx*W,curY=my*H;
+  const sporeChars='\u00B7\u2219\u2022\u25CF';
+  ctx.fillStyle='rgba(180,240,200,0.4)';
+  for(let i=0;i<8;i++){
+    const a2=t*1.5+i*Math.PI/4;
+    const r2=18+Math.sin(t*3+i*1.1)*6;
+    ctx.fillText(sporeChars[i%4],curX+Math.cos(a2)*r2-3,curY+Math.sin(a2)*r2-4);
+  }
+  ctx.fillStyle='rgba(200,255,220,0.7)';
+  ctx.fillText('\u2316',curX-4,curY-5);
+
+  requestAnimationFrame(frame);
+}
+
+document.addEventListener('mousemove',e=>{mx=e.clientX/W;my=e.clientY/H});
+document.addEventListener('touchmove',e=>{e.preventDefault();mx=e.touches[0].clientX/W;my=e.touches[0].clientY/H},{passive:false});
+
+// click: drop a cluster of spores
+document.addEventListener('click',e=>{
+  const sx=e.clientX/W,sy=e.clientY/H;
+  for(let i=0;i<5;i++){
+    spawnSpore(sx+(Math.random()-0.5)*0.03,sy+(Math.random()-0.5)*0.03);
+  }
+  // pulse burst
+  const gc=Math.floor(sx*cols),gr=Math.floor(sy*rows);
+  for(let dy=-5;dy<=5;dy++){
+    for(let dx=-5;dx<=5;dx++){
+      const r2=gr+dy,c2=gc+dx;
+      if(r2<0||r2>=rows||c2<0||c2>=cols)continue;
+      if(Math.sqrt(dx*dx+dy*dy)>5)continue;
+      pulse[r2*cols+c2]=3;
+    }
+  }
+});
+
+window.addEventListener('resize',resize);
+resize();
+frame();
+</script>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0}
+body{background:#000;overflow:hidden;cursor:none}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+
+// AGGRESSIVE character sets - no soft stuff
+const SHARP='\u2588\u2593\u2592\u2591\u2580\u2584\u258C\u2590';
+const MATH='\u2206\u2207\u220F\u2211\u221A\u221E\u2248\u2260\u2264\u2265\u2234\u2235\u2261\u2262';
+const ARROWS='\u2190\u2191\u2192\u2193\u2194\u2195\u21C4\u21C5\u21D0\u21D1\u21D2\u21D3\u21AF\u21B6';
+const BOX='\u2500\u2502\u250C\u2510\u2514\u2518\u251C\u2524\u252C\u2534\u253C\u2550\u2551\u2560\u2563\u256C';
+const BRAILLE='\u2800\u2801\u2803\u2807\u280F\u281F\u283F\u287F\u28FF';
+const GLITCH='@#$%&*!?/\\|[]{}()<>^~`';
+const CYBER='\u2588\u2593\u2592\u2591\u25A0\u25A1\u25B2\u25BC\u25C6\u25CF\u25CB\u2605\u2666\u2660\u2663';
+
+const ALL=[...SHARP,...MATH,...ARROWS,...BOX,...BRAILLE,...GLITCH,...CYBER];
+
+const CELL=11;
+let W,H,cols,rows;
+let mx=0.5,my=0.5;
+let pmx=0.5,pmy=0.5;
+let t=0;
+let click=0;
+let clickX=0,clickY=0;
+
+// NEON PALETTE - hard bands, no smooth transitions
+const PAL=[
+  [0,0,0],
+  [255,0,80],     // hot pink
+  [0,255,180],    // cyan-green
+  [255,255,0],    // yellow scream
+  [0,120,255],    // electric blue
+  [255,0,255],    // magenta
+  [255,60,0],     // orange burn
+  [0,255,255],    // cyan
+  [255,255,255],  // white blast
+  [180,0,255],    // purple
+  [0,255,60],     // toxic green
+  [255,0,0],      // red
+];
+
+function resize(){
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=W;cv.height=H;
+  cols=Math.floor(W/(CELL*0.6));
+  rows=Math.floor(H/CELL);
+  ctx.font='bold '+CELL+'px Courier New';
+  ctx.textBaseline='top';
+}
+
+// Burning Ship fractal - aggressive, jagged
+function burningShip(px,py,maxI){
+  let zr=0,zi=0,i=0,tr;
+  while(i<maxI){
+    tr=zr*zr-zi*zi+px;
+    zi=Math.abs(2*zr*zi)+py;
+    zr=tr;
+    if(zr*zr+zi*zi>4)break;
+    i++;
+  }
+  return i;
+}
+
+// Gravitational lens distortion
+function lens(x,y,lx,ly,strength){
+  const dx=x-lx,dy=y-ly;
+  const d=Math.sqrt(dx*dx+dy*dy);
+  if(d<0.001)return[x,y];
+  const force=strength/(d*d+0.1);
+  return[x+dx*force, y+dy*force];
+}
+
+// glitch tear lines
+let tears=[];
+function updateTears(){
+  if(Math.random()<0.08)tears.push({y:Math.floor(Math.random()*rows),life:3+Math.random()*8,offset:Math.floor(Math.random()*20-10),thick:1+Math.floor(Math.random()*3)});
+  tears=tears.filter(t=>(t.life-=0.15)>0);
+}
+
+function frame(){
+  t+=0.02;
+  updateTears();
+
+  // decay click shockwave
+  if(click>0)click*=0.96;
+
+  // smooth mouse
+  pmx+=(mx-pmx)*0.08;
+  pmy+=(my-pmy)*0.08;
+
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,W,H);
+
+  const asp=(cols*CELL*0.6)/(rows*CELL);
+  const cw=CELL*0.6;
+
+  // fractal center shifts with time
+  const fcx=-1.75+Math.sin(t*0.3)*0.15;
+  const fcy=-0.04+Math.cos(t*0.2)*0.1;
+  const zoom=2.8+Math.sin(t*0.1)*0.5;
+
+  const lensX=(pmx-0.5)*zoom*asp+fcx;
+  const lensY=(pmy-0.5)*zoom+fcy;
+  const lensStr=0.08+Math.sin(t)*0.04;
+
+  // shockwave from click
+  const shockR=click>0.01?(1-click)*3:0;
+
+  const maxI=40+Math.floor(Math.sin(t*0.5)*10);
+
+  // find tear rows for quick lookup
+  const tearRows=new Set();
+  const tearOffsets={};
+  for(const tr of tears){
+    for(let dy=0;dy<tr.thick;dy++){
+      tearRows.add(tr.y+dy);
+      tearOffsets[tr.y+dy]=tr.offset;
+    }
+  }
+
+  for(let r=0;r<rows;r++){
+    const isTear=tearRows.has(r);
+    const tearOff=isTear?(tearOffsets[r]||0):0;
+
+    for(let c=0;c<cols;c++){
+      let px=(c/cols-0.5)*zoom*asp+fcx;
+      let py=(r/rows-0.5)*zoom+fcy;
+
+      // gravitational lens near mouse
+      const lensed=lens(px,py,lensX,lensY,lensStr);
+      px=lensed[0];py=lensed[1];
+
+      // shockwave distortion from click
+      if(shockR>0){
+        const sdx=px-((clickX/W-0.5)*zoom*asp+fcx);
+        const sdy=py-((clickY/H-0.5)*zoom+fcy);
+        const sd=Math.sqrt(sdx*sdx+sdy*sdy);
+        const ring=Math.abs(sd-shockR);
+        if(ring<0.3){
+          const warp=Math.sin(ring*20)*0.05*(1-ring/0.3);
+          px+=sdx*warp;
+          py+=sdy*warp;
+        }
+      }
+
+      const iter=burningShip(px,py,maxI);
+      if(iter>=maxI)continue;
+
+      const norm=iter/maxI;
+
+      // CHARACTER SELECTION - chaotic mixing
+      let ch;
+      const band=Math.floor(norm*6);
+      const noise=Math.sin(c*13.7+r*7.3+t*5)*0.5+0.5;
+
+      if(isTear){
+        // glitch tear: random aggressive chars
+        ch=GLITCH[Math.floor(Math.random()*GLITCH.length)];
+      }else if(band<1){
+        ch=BRAILLE[Math.floor(noise*BRAILLE.length)];
+      }else if(band<2){
+        ch=BOX[Math.floor((noise+norm*3)%1*BOX.length)];
+      }else if(band<3){
+        ch=MATH[Math.floor(noise*MATH.length)];
+      }else if(band<4){
+        ch=ARROWS[Math.floor((noise+t)%1*ARROWS.length)];
+      }else if(band<5){
+        ch=CYBER[Math.floor(noise*CYBER.length)];
+      }else{
+        ch=SHARP[Math.floor(noise*SHARP.length)];
+      }
+
+      // COLOR - hard-stepped neon bands, no blending
+      let palIdx=Math.floor(iter*1.3+t*2)%PAL.length;
+
+      // proximity to mouse = white hot override
+      const mdx=(c/cols-pmx)*asp;
+      const mdy=(r/rows-pmy);
+      const md=Math.sqrt(mdx*mdx+mdy*mdy);
+      if(md<0.06){
+        palIdx=8; // white blast
+      }
+
+      let col=PAL[palIdx];
+
+      // tear lines get inverted colors
+      if(isTear){
+        col=[255-col[0],255-col[1],255-col[2]];
+      }
+
+      // flicker near edges
+      const edgeDist=Math.min(c,cols-c,r,rows-r);
+      if(edgeDist<4&&Math.random()<0.3){
+        col=[col[0]*0.3|0,col[1]*0.3|0,col[2]*0.3|0];
+        ch=GLITCH[Math.floor(Math.random()*GLITCH.length)];
+      }
+
+      const drawC=c+tearOff;
+      if(drawC<0||drawC>=cols)continue;
+
+      ctx.fillStyle=`rgb(${col[0]},${col[1]},${col[2]})`;
+      ctx.fillText(ch,drawC*cw,r*CELL);
+    }
+  }
+
+  // CURSOR: crosshair made of characters
+  const curX=mx*W, curY=my*H;
+  ctx.fillStyle='#fff';
+  ctx.font='bold 14px Courier New';
+  ctx.fillText('\u253C',curX-4,curY-6);
+  ctx.font='bold '+CELL+'px Courier New';
+
+  requestAnimationFrame(frame);
+}
+
+document.addEventListener('mousemove',e=>{mx=e.clientX/W;my=e.clientY/H});
+document.addEventListener('touchmove',e=>{e.preventDefault();mx=e.touches[0].clientX/W;my=e.touches[0].clientY/H},{passive:false});
+document.addEventListener('click',e=>{click=1;clickX=e.clientX;clickY=e.clientY});
+document.addEventListener('wheel',e=>{e.preventDefault();
+  // scroll spawns extra tears
+  for(let i=0;i<3;i++)tears.push({y:Math.floor(Math.random()*rows),life:5+Math.random()*10,offset:Math.floor(Math.random()*30-15),thick:1+Math.floor(Math.random()*4)});
+},{passive:false});
+
+window.addEventListener('resize',resize);
+resize();
+frame();
+</script>
+</body>
+</html>

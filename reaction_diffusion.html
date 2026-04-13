@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0}
+body{background:#030209;overflow:hidden;cursor:none}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+
+const CELL=10;
+let W,H,cols,rows;
+let a,b,na,nb;
+let t=0;
+let mx=0.5,my=0.5,pmx=0.5,pmy=0.5;
+
+const Da=1.0,Db=0.5;
+
+// combining marks
+const ABOVE='\u0300\u0301\u0302\u0303\u0307\u0308\u030A\u030C\u0311\u0310'.split('');
+const BELOW='\u0323\u0324\u0325\u0330\u0331\u0332\u0347'.split('');
+const STRIKE='\u0334\u0335\u0336'.split('');
+
+// box-drawing by angle index (0=E,1=NE,2=N,3=NW,4=W,5=SW,6=S,7=SE)
+const DIR8=['\u2500','\u2571','\u2502','\u2572','\u2500','\u2571','\u2502','\u2572'];
+
+const DUST='\u00B7\u2027\u2219\u2024'.split('');
+const WISP='\u2591\u2592'.split('');
+const CORE='\u2593\u25A0\u25C6\u25CF\u2588'.split('');
+const BLOOM='\u2740\u273B\u2735\u2749\u274B\u2726\u2728\u2729'.split('');
+
+function resize(){
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=W;cv.height=H;
+  cols=Math.floor(W/(CELL*0.6));
+  rows=Math.floor(H/CELL);
+  const sz=cols*rows;
+  a=new Float32Array(sz).fill(1.0);
+  b=new Float32Array(sz).fill(0.0);
+  na=new Float32Array(sz);
+  nb=new Float32Array(sz);
+  ctx.font=CELL+'px Courier New';
+  ctx.textBaseline='top';
+  seed();
+}
+
+function inject(nx,ny,radius,strength){
+  const gc=Math.floor(nx*cols);
+  const gr=Math.floor(ny*rows);
+  const ri=Math.ceil(radius);
+  for(let dy=-ri;dy<=ri;dy++){
+    for(let dx=-ri;dx<=ri;dx++){
+      const rr=gr+dy,cc=gc+dx;
+      if(rr<0||rr>=rows||cc<0||cc>=cols)continue;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d>radius)continue;
+      const idx=rr*cols+cc;
+      const amt=(strength||0.3)*(1-d/radius)+Math.random()*0.08;
+      b[idx]=Math.min(0.5,b[idx]+amt);
+      a[idx]=Math.max(0,1-b[idx]);
+    }
+  }
+}
+
+function seed(){
+  for(let s=0;s<12;s++){
+    inject(0.1+Math.random()*0.8,0.1+Math.random()*0.8,2+Math.random()*2,0.35);
+  }
+}
+
+function step(F,K){
+  for(let r=0;r<rows;r++){
+    const rU=((r-1)+rows)%rows;
+    const rD=(r+1)%rows;
+    const rRow=r*cols, rURow=rU*cols, rDRow=rD*cols;
+    for(let c=0;c<cols;c++){
+      const idx=rRow+c;
+      const cL=((c-1)+cols)%cols;
+      const cR=(c+1)%cols;
+      const lapA=a[rRow+cL]+a[rRow+cR]+a[rURow+c]+a[rDRow+c]-4*a[idx];
+      const lapB=b[rRow+cL]+b[rRow+cR]+b[rURow+c]+b[rDRow+c]-4*b[idx];
+      const av=a[idx],bv=b[idx];
+      const react=av*bv*bv;
+      na[idx]=Math.max(0,Math.min(1,av+Da*lapA-react+F*(1-av)));
+      nb[idx]=Math.max(0,Math.min(1,bv+Db*lapB+react-(F+K)*bv));
+    }
+  }
+  let tmp=a;a=na;na=tmp;
+  tmp=b;b=nb;nb=tmp;
+}
+
+function frame(){
+  t+=0.016;
+  pmx+=(mx-pmx)*0.05;
+  pmy+=(my-pmy)*0.05;
+
+  // mouse X -> feed rate, mouse Y -> kill rate
+  // range kept inside the stable interesting zone — avoids explosive fill
+  // left: sparse drifting spots | center: mitosis | right: worms/stripes
+  const F=0.020+pmx*0.038;
+  const K=0.050+pmy*0.020;
+
+  for(let i=0;i<3;i++) step(F,K);
+
+  ctx.fillStyle='#030209';
+  ctx.fillRect(0,0,W,H);
+
+  const cw=CELL*0.6;
+
+  for(let r=0;r<rows;r++){
+    const rU=((r-1)+rows)%rows;
+    const rD=(r+1)%rows;
+    for(let c=0;c<cols;c++){
+      const idx=r*cols+c;
+      const bv=b[idx];
+      if(bv<0.012)continue;
+
+      const av=a[idx];
+      // norm: 0-1 display intensity (B saturates around 0.35 in most patterns)
+      const norm=Math.min(bv*3,1);
+      // ratio: relative chemical balance
+      const ratio=bv/(av+bv+0.001);
+
+      // gradient for boundary detection & direction
+      const cL=((c-1)+cols)%cols;
+      const cR=(c+1)%cols;
+      const gx=b[r*cols+cR]-b[r*cols+cL];
+      const gy=b[rD*cols+c]-b[rU*cols+c];
+      const gradMag=Math.sqrt(gx*gx+gy*gy);
+      const isEdge=gradMag>0.025&&norm>0.08&&norm<0.92;
+
+      // CHARACTER SELECTION
+      let base;
+      if(norm<0.06){
+        base=DUST[Math.floor((t*0.4+c*0.3+r*0.2))%DUST.length];
+      } else if(isEdge){
+        // gradient direction -> directional box char (this is the magic)
+        const ang=Math.atan2(gy,gx);
+        const di=Math.floor(((ang+Math.PI)/(2*Math.PI)*8+0.5))%8;
+        base=DIR8[di];
+      } else if(norm<0.35){
+        base=WISP[Math.floor(norm/0.35*WISP.length)%WISP.length];
+      } else if(norm<0.85){
+        base=CORE[Math.floor(norm/0.85*CORE.length)%CORE.length];
+      } else {
+        base=BLOOM[Math.floor((t*1.8+c*0.5+r*0.4))%BLOOM.length];
+      }
+
+      // ZALGO: stack combining marks proportional to density
+      let glyph=base;
+      const marks=Math.min(Math.floor(norm*norm*5),4);
+      for(let i=0;i<marks;i++){
+        if(i%2===0) glyph+=ABOVE[Math.floor((t*1.6+c+i*3.1))%ABOVE.length];
+        else         glyph+=BELOW[Math.floor((t*1.3+r+i*2.7))%BELOW.length];
+      }
+      if(norm>0.88) glyph+=STRIKE[Math.floor(t*3)%STRIKE.length];
+
+      // COLOR: indigo (A-rich) -> teal (boundary) -> amber -> white (B-rich)
+      let cr,cg,cb;
+      if(ratio<0.28){
+        const f=ratio/0.28;
+        cr=Math.floor(10+f*30);
+        cg=Math.floor(6+f*22);
+        cb=Math.floor(38+f*80);
+      } else if(ratio<0.52){
+        const f=(ratio-0.28)/0.24;
+        cr=Math.floor(40-f*18);
+        cg=Math.floor(28+f*155);
+        cb=Math.floor(118+f*30);
+      } else if(ratio<0.78){
+        const f=(ratio-0.52)/0.26;
+        cr=Math.floor(22+f*210);
+        cg=Math.floor(183-f*95);
+        cb=Math.floor(148-f*110);
+      } else {
+        const f=(ratio-0.78)/0.22;
+        cr=Math.min(255,Math.floor(232+f*23));
+        cg=Math.min(255,Math.floor(88+f*167));
+        cb=Math.min(255,Math.floor(38+f*217));
+      }
+
+      // boundary glow: edges are bright teal-white
+      if(isEdge){
+        const eg=Math.min(gradMag*14,1);
+        cr=Math.min(255,cr+Math.floor(eg*55));
+        cg=Math.min(255,cg+Math.floor(eg*100));
+        cb=Math.min(255,cb+Math.floor(eg*70));
+      }
+
+      // mouse proximity halo
+      const md=Math.sqrt(((c/cols)-pmx)**2+((r/rows)-pmy)**2);
+      if(md<0.09){
+        const boost=(1-md/0.09)*110;
+        cr=Math.min(255,cr+Math.floor(boost*0.6));
+        cg=Math.min(255,cg+Math.floor(boost));
+        cb=Math.min(255,cb+Math.floor(boost*0.85));
+      }
+
+      ctx.fillStyle=`rgb(${cr},${cg},${cb})`;
+      ctx.fillText(glyph,c*cw,r*CELL);
+    }
+  }
+
+  // parameter readout
+  const curX=pmx*W,curY=pmy*H;
+  ctx.fillStyle='rgba(100,180,130,0.35)';
+  ctx.font='8px Courier New';
+  ctx.fillText('f:'+F.toFixed(3)+'  k:'+K.toFixed(3),curX+12,curY+10);
+
+  // cursor
+  ctx.font='14px Courier New';
+  ctx.fillStyle='rgba(180,255,210,0.75)';
+  let cur='\u2316';
+  cur+=ABOVE[Math.floor(t*4)%ABOVE.length];
+  ctx.fillText(cur,curX-5,curY-7);
+  ctx.font=CELL+'px Courier New';
+
+  requestAnimationFrame(frame);
+}
+
+document.addEventListener('mousemove',e=>{mx=e.clientX/W;my=e.clientY/H});
+document.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  mx=e.touches[0].clientX/W;my=e.touches[0].clientY/H;
+},{passive:false});
+
+document.addEventListener('click',e=>{
+  inject(e.clientX/W,e.clientY/H,3+Math.random()*2,0.35);
+});
+
+// scroll: re-seed with fresh clusters
+document.addEventListener('wheel',e=>{
+  e.preventDefault();
+  seed();
+},{passive:false});
+
+window.addEventListener('resize',resize);
+resize();
+frame();
+</script>
+</body>
+</html>

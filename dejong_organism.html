@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0}
+body{background:#020204;overflow:hidden;cursor:none}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+
+const CELL=9;
+let W,H,cols,rows;
+let grid,colorGrid,ageGrid;
+let mx=0.5,my=0.5;
+let t=0;
+
+// character density ramps - from nothing to solid
+const DUST='\u00B7\u2027\u2219\u2022';
+const THIN='\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588';
+const DOTS='\u2800\u2801\u2803\u2807\u280F\u281F\u283F\u287F\u28FF';
+const DENSE='\u2591\u2592\u2593\u2588\u25A0\u25A3\u25A6\u25A9';
+const ORGANIC='\u0E4F\u06DE\u0A66\u0B66\u2740\u273B\u2735\u2733\u2734\u2739';
+const ANGULAR='\u25E2\u25E3\u25E4\u25E5\u25C6\u25C7\u2B22\u2B23';
+const ALL_DENSE=[...DOTS,...THIN,...DENSE];
+
+function resize(){
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=W;cv.height=H;
+  cols=Math.floor(W/(CELL*0.58));
+  rows=Math.floor(H/CELL);
+  grid=new Float32Array(cols*rows);
+  colorGrid=new Float32Array(cols*rows*3);
+  ageGrid=new Float32Array(cols*rows);
+  ctx.font=CELL+'px Courier New';
+  ctx.textBaseline='top';
+}
+
+// De Jong attractor
+// x' = sin(a*y) - cos(b*x)
+// y' = sin(c*x) - cos(d*y)
+function iterate(x,y,a,b,c,d){
+  return[
+    Math.sin(a*y)-Math.cos(b*x),
+    Math.sin(c*x)-Math.cos(d*y)
+  ];
+}
+
+// map attractor coords (-2..2) to grid
+function toGrid(x,y){
+  const gc=Math.floor((x+2.2)/4.4*cols);
+  const gr=Math.floor((y+2.2)/4.4*rows);
+  return[gc,gr];
+}
+
+function frame(){
+  t+=0.003;
+
+  // attractor parameters - mouse controls two, time drifts two
+  const a=mx*6-3;
+  const b=my*6-3;
+  const c=Math.sin(t*1.7)*2.5+Math.cos(t*0.3)*0.5;
+  const d=Math.cos(t*1.1)*2.5+Math.sin(t*0.7)*0.5;
+
+  // decay existing grid
+  for(let i=0;i<cols*rows;i++){
+    grid[i]*=0.965;
+    ageGrid[i]+=0.01;
+    colorGrid[i*3]*=0.97;
+    colorGrid[i*3+1]*=0.97;
+    colorGrid[i*3+2]*=0.97;
+  }
+
+  // run attractor - lots of iterations per frame
+  let x=Math.sin(t*3)*0.1;
+  let y=Math.cos(t*2)*0.1;
+
+  // skip transient
+  for(let i=0;i<50;i++){
+    const n=iterate(x,y,a,b,c,d);
+    x=n[0];y=n[1];
+  }
+
+  const iters=18000;
+  for(let i=0;i<iters;i++){
+    const n=iterate(x,y,a,b,c,d);
+    x=n[0];y=n[1];
+
+    if(x<-2.2||x>2.2||y<-2.2||y>2.2)continue;
+
+    const[gc,gr]=toGrid(x,y);
+    if(gc<0||gc>=cols||gr<0||gr>=rows)continue;
+
+    const idx=gr*cols+gc;
+    grid[idx]+=0.15;
+    ageGrid[idx]=0;
+
+    // color based on position in attractor phase space
+    const phase=Math.atan2(y,x);
+    const dist=Math.sqrt(x*x+y*y);
+
+    // multiple color regimes based on angle
+    const h=(phase+Math.PI)/(2*Math.PI);
+    const regime=Math.floor(h*5)%5;
+
+    const ci=idx*3;
+    switch(regime){
+      case 0: colorGrid[ci]+=0.12;colorGrid[ci+1]+=0.03;colorGrid[ci+2]+=0.06;break;
+      case 1: colorGrid[ci]+=0.03;colorGrid[ci+1]+=0.12;colorGrid[ci+2]+=0.08;break;
+      case 2: colorGrid[ci]+=0.08;colorGrid[ci+1]+=0.04;colorGrid[ci+2]+=0.12;break;
+      case 3: colorGrid[ci]+=0.11;colorGrid[ci+1]+=0.10;colorGrid[ci+2]+=0.02;break;
+      case 4: colorGrid[ci]+=0.02;colorGrid[ci+1]+=0.11;colorGrid[ci+2]+=0.11;break;
+    }
+  }
+
+  // also run a second attractor with slightly shifted params for texture
+  let x2=Math.cos(t*5)*0.1;
+  let y2=Math.sin(t*4)*0.1;
+  const a2=a+Math.sin(t*3)*0.3;
+  const b2=b+Math.cos(t*2)*0.3;
+  for(let i=0;i<50;i++){const n=iterate(x2,y2,a2,b2,c,d);x2=n[0];y2=n[1];}
+  for(let i=0;i<4000;i++){
+    const n=iterate(x2,y2,a2,b2,c,d);
+    x2=n[0];y2=n[1];
+    if(x2<-2.2||x2>2.2||y2<-2.2||y2>2.2)continue;
+    const[gc,gr]=toGrid(x2,y2);
+    if(gc<0||gc>=cols||gr<0||gr>=rows)continue;
+    const idx=gr*cols+gc;
+    grid[idx]+=0.04;
+    const ci=idx*3;
+    colorGrid[ci]+=0.04;colorGrid[ci+1]+=0.04;colorGrid[ci+2]+=0.04;
+  }
+
+  // RENDER
+  ctx.fillStyle='#020204';
+  ctx.fillRect(0,0,W,H);
+
+  const cw=CELL*0.58;
+
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const idx=r*cols+c;
+      const v=grid[idx];
+      if(v<0.05)continue;
+
+      const density=Math.min(v,12);
+      const norm=density/12;
+
+      // character selection based on density
+      let ch;
+      if(norm<0.1){
+        ch=DUST[Math.floor(norm/0.1*DUST.length)%DUST.length];
+      }else if(norm<0.3){
+        const n2=(norm-0.1)/0.2;
+        ch=DOTS[Math.floor(n2*DOTS.length)%DOTS.length];
+      }else if(norm<0.5){
+        const n2=(norm-0.3)/0.2;
+        const age=ageGrid[idx];
+        if(age<0.05){
+          ch=ORGANIC[Math.floor(Math.random()*ORGANIC.length)];
+        }else{
+          ch=ANGULAR[Math.floor(n2*ANGULAR.length)%ANGULAR.length];
+        }
+      }else if(norm<0.8){
+        const n2=(norm-0.5)/0.3;
+        ch=THIN[Math.floor(n2*THIN.length)%THIN.length];
+      }else{
+        ch=DENSE[Math.floor(norm/12*DENSE.length*8)%DENSE.length];
+      }
+
+      // color from accumulated color grid
+      const ci=idx*3;
+      const maxC=Math.max(colorGrid[ci],colorGrid[ci+1],colorGrid[ci+2],0.01);
+      const scale=Math.min(255,norm*320)/maxC;
+
+      let cr=Math.min(255,Math.floor(colorGrid[ci]*scale));
+      let cg=Math.min(255,Math.floor(colorGrid[ci+1]*scale));
+      let cb=Math.min(255,Math.floor(colorGrid[ci+2]*scale));
+
+      // boost saturation
+      const avg=(cr+cg+cb)/3;
+      cr=Math.min(255,Math.floor(cr+(cr-avg)*0.8));
+      cg=Math.min(255,Math.floor(cg+(cg-avg)*0.8));
+      cb=Math.min(255,Math.floor(cb+(cb-avg)*0.8));
+      cr=Math.max(0,cr);cg=Math.max(0,cg);cb=Math.max(0,cb);
+
+      // recently hit cells glow brighter
+      if(ageGrid[idx]<0.03){
+        cr=Math.min(255,cr+80);
+        cg=Math.min(255,cg+80);
+        cb=Math.min(255,cb+80);
+      }
+
+      ctx.fillStyle=`rgb(${cr},${cg},${cb})`;
+      ctx.fillText(ch,c*cw,r*CELL);
+    }
+  }
+
+  // cursor: orbiting characters
+  const curX=mx*W;
+  const curY=my*H;
+  ctx.fillStyle='rgba(255,255,255,0.6)';
+  const orb='\u25CB\u25CF\u25C7\u25C6\u2729\u2727';
+  for(let i=0;i<6;i++){
+    const ang=t*3+i*Math.PI/3;
+    const rad=14+Math.sin(t*5+i)*4;
+    const ox=curX+Math.cos(ang)*rad;
+    const oy=curY+Math.sin(ang)*rad;
+    ctx.fillText(orb[i],ox-4,oy-5);
+  }
+  ctx.fillStyle='#fff';
+  ctx.fillText('\u2316',curX-5,curY-6);
+
+  requestAnimationFrame(frame);
+}
+
+document.addEventListener('mousemove',e=>{mx=e.clientX/W;my=e.clientY/H});
+document.addEventListener('touchmove',e=>{e.preventDefault();mx=e.touches[0].clientX/W;my=e.touches[0].clientY/H},{passive:false});
+
+// click: burst of noise into the grid
+document.addEventListener('click',e=>{
+  const bx=e.clientX/W;
+  const by=e.clientY/H;
+  const gc=Math.floor(bx*cols);
+  const gr=Math.floor(by*rows);
+  for(let dy=-8;dy<=8;dy++){
+    for(let dx=-8;dx<=8;dx++){
+      const r2=gr+dy,c2=gc+dx;
+      if(r2<0||r2>=rows||c2<0||c2>=cols)continue;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d>8)continue;
+      const idx=r2*cols+c2;
+      grid[idx]+=Math.random()*3*(1-d/8);
+      ageGrid[idx]=0;
+      const ci=idx*3;
+      colorGrid[ci]+=Math.random()*2;
+      colorGrid[ci+1]+=Math.random()*2;
+      colorGrid[ci+2]+=Math.random()*2;
+    }
+  }
+});
+
+window.addEventListener('resize',resize);
+resize();
+frame();
+</script>
+</body>
+</html>

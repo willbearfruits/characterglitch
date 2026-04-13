@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0}
+body{background:#08060e;overflow:hidden;cursor:none}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+
+const CELL=13;
+let W,H,cols,rows;
+let mx=0.5,my=0.5,pmx=0.5,pmy=0.5;
+let mxv=0,myv=0,prevMx=0.5,prevMy=0.5;
+let t=0;
+let energy;
+
+// combining marks - small curated sets
+const ABOVE=['\u0300','\u0301','\u0302','\u0303','\u0304','\u0307','\u0308','\u030A','\u030C','\u0311'];
+const BELOW=['\u0323','\u0324','\u0325','\u0326','\u0327','\u0330','\u0331','\u0332'];
+const OVERLAY=['\u0334','\u0335','\u0336'];
+
+const CALM='\u00B7 \u2027 \u2219 . - ~'.split(' ');
+const MID='\u2500\u2502\u256D\u256E\u256F\u2570\u2571\u2572'.split('');
+const DENSE='\u2591\u2592\u2593\u25A0\u25C6'.split('');
+
+let vortices=[];
+
+function resize(){
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=W;cv.height=H;
+  cols=Math.floor(W/(CELL*0.58));
+  rows=Math.floor(H/(CELL*1.1));
+  energy=new Float32Array(cols*rows);
+  ctx.font=CELL+'px Courier New';
+  ctx.textBaseline='top';
+  vortices=[
+    {x:0.35,y:0.4,vx:0.001,vy:0.0008,strength:1,spin:1},
+    {x:0.65,y:0.6,vx:-0.0008,vy:0.001,strength:0.8,spin:-1}
+  ];
+}
+
+function noise(x,y,s){
+  return Math.sin(x*s+t*0.8)*Math.cos(y*s*0.7+t*0.6)+Math.sin((x+y)*s*0.5+t)*0.4;
+}
+
+function frame(){
+  t+=0.018;
+
+  mxv=mx-prevMx;myv=my-prevMy;
+  prevMx=mx;prevMy=my;
+  pmx+=(mx-pmx)*0.08;
+  pmy+=(my-pmy)*0.08;
+  const mouseSpeed=Math.sqrt(mxv*mxv+myv*myv)*80;
+
+  // update vortices
+  for(const v of vortices){
+    v.x+=v.vx;v.y+=v.vy;
+    v.vx+=(0.5-v.x)*0.00008;
+    v.vy+=(0.5-v.y)*0.00008;
+    if(v.x<0.08||v.x>0.92)v.vx*=-0.7;
+    if(v.y<0.08||v.y>0.92)v.vy*=-0.7;
+  }
+
+  // compute energy
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const idx=r*cols+c;
+      const fx=c/cols,fy=r/rows;
+
+      let en=Math.abs(noise(fx,fy,5))*0.15;
+
+      for(const v of vortices){
+        const dx=fx-v.x,dy=fy-v.y;
+        const d=Math.sqrt(dx*dx+dy*dy)+0.02;
+        en+=v.strength/(d*10+0.8)*0.5;
+      }
+
+      // mouse influence
+      const md=Math.sqrt((fx-pmx)**2+(fy-pmy)**2)+0.02;
+      en+=(0.8+mouseSpeed*3)/(md*14+0.6)*0.4;
+
+      energy[idx]=energy[idx]*0.75+en*0.25;
+    }
+  }
+
+  ctx.fillStyle='#08060e';
+  ctx.fillRect(0,0,W,H);
+
+  const cw=CELL*0.58;
+  const ch_h=CELL*1.1;
+
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const idx=r*cols+c;
+      const en=energy[idx];
+      if(en<0.12)continue;
+
+      const norm=Math.min(en/2.5,1);
+
+      // base character
+      let base;
+      if(norm<0.25){
+        base=CALM[Math.floor(Math.abs(noise(c*0.4,r*0.4,1.5))*CALM.length)%CALM.length];
+      }else if(norm<0.55){
+        const angle=noise(c*0.2,r*0.2,3)+t;
+        base=MID[Math.floor((angle*2+8)%MID.length)];
+      }else{
+        base=DENSE[Math.floor(norm*DENSE.length)%DENSE.length];
+      }
+
+      // combining marks - gentle, max 3 total
+      let glyph=base;
+      if(norm>0.35){
+        const count=Math.min(Math.floor((norm-0.35)*4.5),3);
+        for(let i=0;i<count;i++){
+          if(i%2===0){
+            glyph+=ABOVE[Math.floor((t*2+c*1.3+i*3)%ABOVE.length)];
+          }else{
+            glyph+=BELOW[Math.floor((t*1.5+r*1.7+i*2.5)%BELOW.length)];
+          }
+        }
+      }
+      if(norm>0.8){
+        glyph+=OVERLAY[Math.floor(t*3)%OVERLAY.length];
+      }
+
+      // color - muted, cool palette
+      const flowAngle=noise(c*0.15,r*0.15,4)*3.14+t*0.5;
+      const hue=(flowAngle/6.28*360+180)%360;
+      const sat=25+norm*25;
+      const lit=10+norm*40;
+
+      const hp=((hue%360)+360)%360;
+      const sp=sat/100,lp=lit/100;
+      const kk=n=>(n+hp/30)%12;
+      const aa=sp*Math.min(lp,1-lp);
+      const ff=n=>lp-aa*Math.max(-1,Math.min(kk(n)-3,9-kk(n),1));
+      let cr=Math.round(ff(0)*255);
+      let cg=Math.round(ff(8)*255);
+      let cb=Math.round(ff(4)*255);
+
+      // gentle mouse glow
+      const mdist=Math.sqrt((c/cols-pmx)**2+(r/rows-pmy)**2);
+      if(mdist<0.06){
+        const boost=1-mdist/0.06;
+        cr=Math.min(255,cr+Math.floor(boost*80));
+        cg=Math.min(255,cg+Math.floor(boost*80));
+        cb=Math.min(255,cb+Math.floor(boost*80));
+      }
+
+      ctx.fillStyle=`rgb(${cr},${cg},${cb})`;
+      ctx.fillText(glyph,c*cw,r*ch_h);
+    }
+  }
+
+  // cursor
+  const curX=pmx*W,curY=pmy*H;
+  let cur='\u2316';
+  if(mouseSpeed>0.3)cur+=ABOVE[Math.floor(t*4)%ABOVE.length];
+  ctx.fillStyle='rgba(200,220,240,0.6)';
+  ctx.font='14px Courier New';
+  ctx.fillText(cur,curX-5,curY-7);
+  ctx.font=CELL+'px Courier New';
+
+  requestAnimationFrame(frame);
+}
+
+document.addEventListener('mousemove',e=>{mx=e.clientX/W;my=e.clientY/H});
+document.addEventListener('touchmove',e=>{e.preventDefault();mx=e.touches[0].clientX/W;my=e.touches[0].clientY/H},{passive:false});
+
+document.addEventListener('click',e=>{
+  vortices.push({
+    x:e.clientX/W,y:e.clientY/H,
+    vx:(Math.random()-0.5)*0.003,
+    vy:(Math.random()-0.5)*0.003,
+    strength:0.6+Math.random()*0.6,
+    spin:Math.random()<0.5?1:-1
+  });
+  if(vortices.length>5)vortices.shift();
+});
+
+window.addEventListener('resize',resize);
+resize();
+frame();
+</script>
+</body>
+</html>
