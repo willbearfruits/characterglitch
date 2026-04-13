@@ -17,7 +17,7 @@ html,body{height:100%}
 body{
   background:var(--bg);
   color:var(--ink);
-  font:12px/1.5 "Courier New", Courier, monospace;
+  font:15px/1.55 "Courier New", Courier, monospace;
   overflow:auto;
   cursor:none;
 }
@@ -34,7 +34,7 @@ main{
   margin:22px auto 40px;
 }
 h1{
-  font-size:12px;
+  font-size:15px;
   font-weight:normal;
   letter-spacing:.08em;
   text-transform:lowercase;
@@ -67,6 +67,7 @@ p{
 }
 .label{
   color:var(--hot);
+  font-size:13px;
 }
 .value{
   white-space:pre-wrap;
@@ -93,7 +94,7 @@ p{
 
 <main>
   <h1>character glitch / index</h1>
-  <p>Five pieces worth surfacing. Bare index, direct links, no wrapper logic beyond selection and routing.</p>
+  <p>Six pieces worth surfacing. Bare index, direct links, no wrapper logic beyond selection and routing.</p>
 
   <nav id="experiments" class="list" aria-label="Experiments"></nav>
 
@@ -116,7 +117,7 @@ p{
     </div>
     <div>
       <div class="label">keys</div>
-      <div class="value">01..05 jump
+      <div class="value">01..06 jump
 ↑ ↓ move
 enter open</div>
     </div>
@@ -171,6 +172,15 @@ const experiments=[
     strap:'burning ship / tears / shockwave',
     description:'A hard-edged fractal chamber with lens distortion, glitch tear lines, and click shockwaves.',
     controls:'mousemove, touchmove, click, wheel'
+  },
+  {
+    title:'charsort',
+    file:'charsort.html',
+    code:'06',
+    glyph:'▒▒≋≋▒▒',
+    strap:'character sort / threshold spans / streak field',
+    description:'A procedural brightness field gets pixel-sorted as characters. Mouse position shifts thresholds and sort direction; clicks inject local disturbances.',
+    controls:'mousemove, touchmove, click'
   }
 ];
 
@@ -233,7 +243,7 @@ document.addEventListener('keydown',e=>{
   }else if(e.key==='ArrowUp' || e.key==='k'){
     e.preventDefault();
     setCurrent(current-1);
-  }else if(/^[1-5]$/.test(e.key)){
+  }else if(/^[1-6]$/.test(e.key)){
     setCurrent(Number(e.key)-1);
   }else if(e.key==='Enter'){
     window.location.href=experiments[current].file;
