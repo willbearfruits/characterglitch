@@ -1,0 +1,71 @@
+The Line.
+
+This piece is a short history of image making, writing, signal, code, and machine aesthetics. It is meant to be clear enough for a beginner, but deep enough to show that digital art did not appear from nowhere. The same questions repeat for thousands of years. What does a tool make possible. What does a material force us to do. When does a limitation become a style.
+
+Cave painting, around forty thousand BCE.
+
+The wall is part of the image. A crack can become a horizon. A bump can become a shoulder. The picture is not simply placed on a blank surface. It is negotiated with an existing one. That matters because many contemporary digital artists do the same thing with the screen, the scanline, the pixel block, the browser frame, or the compression artifact.
+
+Cuneiform, around thirty four hundred BCE.
+
+The writing looks abstract, but its shape comes from a physical action. A reed stylus pressed into wet clay produces wedge marks. The symbol grows out of the tool. This is an early reminder that marks do not float free from matter. Hardware leaves fingerprints on language.
+
+Illuminated manuscripts, around six hundred CE.
+
+These books were copied by hand, one character at a time. Text, ornament, abbreviation, correction, and error all lived together in the same object. Reading was already visual design. The page was already an interface. Text has never been only content.
+
+The printing press, fourteen forty.
+
+Print standardizes the page. Repeated blocks, repeated forms, rigid alignment, reproducibility at scale. Once the grid hardens, every later maker has a choice. Obey it, or push against it. Much of modern design still inherits print logic, even when it lives on screens.
+
+Concrete poetry.
+
+Words are not only statements. They are shapes in space. The distance between words, the emptiness of the page, the direction of the eye, all become part of the work. For a beginner, this is one of the cleanest bridges between literature, visual design, and code poetry. Meaning and layout become inseparable.
+
+Typewriter art.
+
+A writing machine is forced to become an image machine. The available characters are the palette. The spacing system is the grid. The limitation is not separate from the artwork. It is the condition that gives the artwork its character. ASCII art and terminal drawing inherit this directly.
+
+Telegraph and signal.
+
+Communication starts moving through wires instead of staying on a surface. That shift introduces new problems. Noise. Loss. Crosstalk. Delay. Once transmission has failure modes, those failure modes can become expressive. Many later digital aesthetics begin here, when the medium becomes unstable and the instability becomes visible.
+
+Bauhaus and constructivism.
+
+Typography becomes structure. Layout becomes engineering. The grid is no longer just a convenience. It becomes a worldview. This matters because later artists do not only break a neutral interface. They break an interface that was first built as a system.
+
+Fluxus and mail art.
+
+Art can be an instruction, a score, a prompt, or an event. The work does not have to be a static object. It can be a rule for something to happen. That idea runs straight into conceptual software, executable text, live coding, and networked distribution. Art becomes protocol.
+
+Early computer art.
+
+Artists begin writing systems that generate form. Plotters, algorithms, repetition, mechanical drawing, procedural logic. The machine is not only a tool for carrying out a plan. It becomes a collaborator with tendencies of its own. The artist writes constraints. The system produces outcomes.
+
+ASCII, ANSI, and related character graphics.
+
+The screen cannot show much, so artists use what is available. Letters, numbers, punctuation, color limitations, fixed-width cells. The result is not a weaker art form. It is an intensified one. This is one of the clearest ancestors of the work in this repository, where characters are not labels attached to images. They are the image material.
+
+The demoscene.
+
+The challenge is to make a machine do something it should not be able to do, often under extreme size limits like sixty four kilobytes or even four kilobytes. Every byte matters. Optimization becomes aesthetics. Compression becomes composition. Limitation is not a problem to escape. It is the engine of invention.
+
+Net art.
+
+The web itself becomes the medium. Not just pictures placed on websites, but the actual grammar of the browser: links, frames, broken markup, loading states, defaults, and failure modes. HTML is not a container. It is the material. That is especially relevant here, because these works use the browser as a surface with its own memory and its own scars.
+
+Glitch art.
+
+Compression blocks, broken frames, damaged files, codec artifacts, malformed data. Instead of hiding the error, the artist studies it and uses it. The medium stops pretending to be transparent. It announces itself. Glitch closes a loop back to cave painting. Both treat the artifact of the support as part of the composition.
+
+Circuit bending and hardware hacking.
+
+The same logic moves from file formats into electronics. A toy, keyboard, or speech device is opened, rerouted, shorted, or misused until hidden behaviors emerge. This is not only destruction. It is a search for the machine's unofficial voice. The system is pushed beyond its intended design until it reveals another personality.
+
+Live coding.
+
+Source code becomes performance. The audience sees the instrument being edited while it is played. The score, the system, the bug, and the improvisation are all visible at once. In this form, the negotiation with the machine is no longer hidden backstage. It is the event itself.
+
+That is the line.
+
+From cave wall to clay, from manuscript to press, from signal to grid, from browser to glitch, from hardware to live code, the pattern keeps returning. A tool shapes the mark. A material resists. An error becomes useful. A limitation becomes style. The machine speaks, and artists learn how to listen.

@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Character Glitch</title>
-<meta name="description" content="Character-only browser experiments: vortex fields, attractors, mycelium, physarum, fractals, character sorting, and a Fibonacci cube.">
+<meta name="description" content="Character-only browser experiments: vortex fields, attractors, mycelium, physarum, fractals, character sorting, a Fibonacci cube, and The Line.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Character Glitch">
-<meta property="og:description" content="Character-only browser experiments: vortex fields, attractors, mycelium, physarum, fractals, character sorting, and a Fibonacci cube.">
+<meta property="og:description" content="Character-only browser experiments: vortex fields, attractors, mycelium, physarum, fractals, character sorting, a Fibonacci cube, and The Line.">
 <meta property="og:url" content="https://willbearfruits.github.io/characterglitch/">
 <meta property="og:image" content="https://willbearfruits.github.io/characterglitch/social-preview.png">
 <meta property="og:image:width" content="1200">
@@ -15,7 +15,7 @@
 <meta property="og:image:alt" content="Character Glitch social preview with gold glyph field on a dark background.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Character Glitch">
-<meta name="twitter:description" content="Character-only browser experiments: vortex fields, attractors, mycelium, physarum, fractals, character sorting, and a Fibonacci cube.">
+<meta name="twitter:description" content="Character-only browser experiments: vortex fields, attractors, mycelium, physarum, fractals, character sorting, a Fibonacci cube, and The Line.">
 <meta name="twitter:image" content="https://willbearfruits.github.io/characterglitch/social-preview.png">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -107,7 +107,7 @@ p{
 
 <main>
   <h1>character glitch / index</h1>
-  <p>Seven pieces worth surfacing. Bare index, direct links, no wrapper logic beyond selection and routing.</p>
+  <p>Eight pieces worth surfacing. Bare index, direct links, no wrapper logic beyond selection and routing.</p>
 
   <nav id="experiments" class="list" aria-label="Experiments"></nav>
 
@@ -130,7 +130,7 @@ p{
     </div>
     <div>
       <div class="label">keys</div>
-      <div class="value">01..07 jump
+      <div class="value">01..08 jump
 ↑ ↓ move
 enter open</div>
     </div>
@@ -203,6 +203,15 @@ const experiments=[
     strap:'golden-angle cube / 3d projection / pulse lattice',
     description:'A Fibonacci cube rotates as a projected glyph body. Depth chooses characters, threads connect the shell, and clicks send heavy shock rings through the lattice.',
     controls:'mousemove, touchmove, click, wheel'
+  },
+  {
+    title:'the line',
+    file:'the-line-v3.html',
+    code:'08',
+    glyph:'│◆█◆│',
+    strap:'timeline / media history / daisy narration',
+    description:'A character-only line of media history: cave wall to live code, with plain-language notes, external links, and segmented Daisy narration.',
+    controls:'mousemove, touchmove, click, wheel, ← →, home, end'
   }
 ];
 

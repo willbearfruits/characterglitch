@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+:root{--accent:255,255,255}
+*{margin:0;padding:0}
+body{background:#000;overflow:hidden;cursor:none}
+canvas{display:block}
+.reader{
+  position:fixed;
+  top:18px;
+  right:18px;
+  width:min(38vw,560px);
+  max-height:calc(100vh - 36px);
+  overflow:auto;
+  overflow-x:hidden;
+  padding:18px 20px 20px;
+  border:1px solid rgba(var(--accent),0.26);
+  background:rgba(0,0,0,0.84);
+  color:#e4e4e4;
+  font:18px/1.66 "Courier New", monospace;
+  cursor:auto;
+  z-index:3;
+  box-shadow:0 0 0 1px rgba(var(--accent),0.08) inset;
+}
+.reader::-webkit-scrollbar{width:8px}
+.reader::-webkit-scrollbar-thumb{background:rgba(var(--accent),0.2)}
+.readerKicker{color:#8b8b8b;margin-bottom:8px;letter-spacing:.08em;text-transform:uppercase;font-size:11px}
+.readerTitle{color:rgb(var(--accent));font-size:30px;line-height:1.08}
+.readerYear{color:#d8d8d8;font-size:15px;margin-top:7px}
+.readerBody{margin-top:14px;color:#ececec;white-space:pre-wrap}
+.readerWhy{margin-top:14px;color:#fff3a0;white-space:pre-wrap}
+.readerControls{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+.readerBtn{
+  background:#0b0b0b;
+  color:#ddd;
+  border:1px solid rgba(var(--accent),0.2);
+  padding:7px 11px;
+  font:13px/1 "Courier New", monospace;
+}
+.readerBtn:hover{color:#fff;border-color:rgba(var(--accent),0.5)}
+.readerNavLabel{
+  display:inline-flex;
+  align-items:center;
+  padding:0 8px;
+  color:rgb(var(--accent));
+  font:14px/1 "Courier New", monospace;
+}
+.readerStatus{margin-top:10px;color:#b8b8b8;font-size:14px;white-space:pre-wrap}
+.readerLinks{margin-top:14px;display:grid;gap:6px}
+.readerLink{
+  color:rgb(var(--accent));
+  text-decoration:none;
+  border-bottom:1px solid rgba(var(--accent),0.18);
+  padding-bottom:4px;
+}
+.readerLink:hover{color:#fff;border-bottom-color:rgba(255,255,255,0.35)}
+.readerHint{margin-top:14px;color:#8a8a8a;font-size:13px;white-space:pre-wrap}
+.playerDock{
+  position:fixed;
+  left:50%;
+  bottom:16px;
+  transform:translateX(-50%);
+  z-index:4;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 14px;
+  border:1px solid rgba(var(--accent),0.24);
+  background:rgba(0,0,0,0.88);
+  color:#cfcfcf;
+  font:15px/1 "Courier New", monospace;
+  letter-spacing:.02em;
+}
+.playerTag{color:#8a8a8a}
+.playerReadout{min-width:20ch;color:rgb(var(--accent))}
+.playerReadout.playing{color:#fff}
+.playerBtn{
+  background:#000;
+  color:#d7d7d7;
+  border:1px solid rgba(var(--accent),0.18);
+  padding:5px 9px;
+  font:14px/1 "Courier New", monospace;
+}
+.playerBtn:hover{color:#fff;border-color:rgba(var(--accent),0.5)}
+.autoplayPrompt{
+  position:fixed;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  z-index:5;
+  display:none;
+  min-width:min(72vw,520px);
+  padding:18px 20px;
+  border:1px solid rgba(var(--accent),0.26);
+  background:rgba(0,0,0,0.94);
+  color:rgb(var(--accent));
+  text-align:center;
+  font:18px/1.6 "Courier New", monospace;
+  letter-spacing:.04em;
+}
+.autoplayPrompt.show{display:block}
+.autoplayPromptTitle{color:#fff;margin-bottom:8px}
+.autoplayPromptBtn{
+  margin-top:12px;
+  background:#000;
+  color:rgb(var(--accent));
+  border:1px solid rgba(var(--accent),0.24);
+  padding:9px 15px;
+  font:14px/1 "Courier New", monospace;
+}
+.autoplayPromptBtn:hover{color:#fff;border-color:rgba(var(--accent),0.5)}
+@media (max-width:900px){
+  .reader{
+    top:auto;
+    right:10px;
+    left:10px;
+    bottom:10px;
+    width:auto;
+    max-height:34vh;
+    font-size:16px;
+  }
+  .playerDock{
+    left:10px;
+    right:10px;
+    bottom:10px;
+    transform:none;
+    justify-content:space-between;
+    flex-wrap:wrap;
+  }
+  .playerReadout{min-width:0}
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<aside class="reader">
+  <div class="readerKicker">The Line / Reader</div>
+  <div id="readerTitle" class="readerTitle"></div>
+  <div id="readerYear" class="readerYear"></div>
+  <div id="readerBody" class="readerBody"></div>
+  <div id="readerWhy" class="readerWhy"></div>
+  <div class="readerControls">
+    <button id="prevEraBtn" class="readerBtn" type="button">prev</button>
+    <span id="readerNavLabel" class="readerNavLabel">01 / 16</span>
+    <button id="nextEraBtn" class="readerBtn" type="button">next</button>
+    <button id="speakBtn" class="readerBtn" type="button">play daisy</button>
+    <button id="speakAllBtn" class="readerBtn" type="button">play hal</button>
+    <button id="stopSpeakBtn" class="readerBtn" type="button">stop</button>
+  </div>
+  <div id="readerStatus" class="readerStatus">speech idle</div>
+  <div id="readerLinks" class="readerLinks"></div>
+  <div class="readerHint">move through the line
+scroll to travel
+mouse focus changes the explanation
+left / right navigate eras
+daisy reads the whole line
+transcript is plain text
+links open in a new tab</div>
+</aside>
+<audio id="narrationAudio" preload="metadata"></audio>
+<div class="playerDock" aria-label="narration player">
+  <span class="playerTag">[voice:daisy]</span>
+  <span id="playerReadout" class="playerReadout">idle</span>
+  <button id="dockPlayBtn" class="playerBtn" type="button">play</button>
+  <button id="dockPauseBtn" class="playerBtn" type="button">pause</button>
+  <button id="dockStopBtn" class="playerBtn" type="button">stop</button>
+  <a class="playerBtn" href="the-line-v3-narration.txt" target="_blank" rel="noreferrer noopener" style="text-decoration:none">text</a>
+</div>
+<div id="autoplayPrompt" class="autoplayPrompt" role="dialog" aria-live="polite" aria-label="audio playback prompt">
+  <div class="autoplayPromptTitle">audio blocked</div>
+  <div>press play to start the daisy narration</div>
+  <button id="autoplayPromptBtn" class="autoplayPromptBtn" type="button">play narration</button>
+</div>
+<script>
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+const readerTitle=document.getElementById('readerTitle');
+const readerYear=document.getElementById('readerYear');
+const readerBody=document.getElementById('readerBody');
+const readerWhy=document.getElementById('readerWhy');
+const readerLinks=document.getElementById('readerLinks');
+const readerStatus=document.getElementById('readerStatus');
+const narrationAudio=document.getElementById('narrationAudio');
+const prevEraBtn=document.getElementById('prevEraBtn');
+const nextEraBtn=document.getElementById('nextEraBtn');
+const readerNavLabel=document.getElementById('readerNavLabel');
+const speakBtn=document.getElementById('speakBtn');
+const speakAllBtn=document.getElementById('speakAllBtn');
+const stopSpeakBtn=document.getElementById('stopSpeakBtn');
+const playerReadout=document.getElementById('playerReadout');
+const dockPlayBtn=document.getElementById('dockPlayBtn');
+const dockPauseBtn=document.getElementById('dockPauseBtn');
+const dockStopBtn=document.getElementById('dockStopBtn');
+const autoplayPrompt=document.getElementById('autoplayPrompt');
+const autoplayPromptBtn=document.getElementById('autoplayPromptBtn');
+
+const CELL=20;
+const CW=CELL*0.58;
+let W,H,cols,rows;
+let mx=0.5,my=0.5,pmx=0.5,pmy=0.5;
+let t=0;
+let scrollY=0,targetScrollY=0;
+let click=0,clickR=0,clickCR=0,clickCC=0;
+let spineCol=4,contentStartCol=10;
+const HAL_AUDIO='the-line-v3-hal.ogg';
+const DAISY_VERSION='v2';
+const DAISY_SEGMENTS=[
+  {file:`the-line-v3-daisy-00-cave.ogg?${DAISY_VERSION}`,era:0,label:'cave painting'},
+  {file:`the-line-v3-daisy-01-cunei.ogg?${DAISY_VERSION}`,era:1,label:'cuneiform'},
+  {file:`the-line-v3-daisy-02-manuscript.ogg?${DAISY_VERSION}`,era:2,label:'illuminated manuscripts'},
+  {file:`the-line-v3-daisy-03-press.ogg?${DAISY_VERSION}`,era:3,label:'printing press'},
+  {file:`the-line-v3-daisy-04-concrete.ogg?${DAISY_VERSION}`,era:4,label:'concrete poetry'},
+  {file:`the-line-v3-daisy-05-typewr.ogg?${DAISY_VERSION}`,era:5,label:'typewriter art'},
+  {file:`the-line-v3-daisy-06-telegraph.ogg?${DAISY_VERSION}`,era:6,label:'telegraph and signal'},
+  {file:`the-line-v3-daisy-07-bauhaus.ogg?${DAISY_VERSION}`,era:7,label:'bauhaus'},
+  {file:`the-line-v3-daisy-08-fluxus.ogg?${DAISY_VERSION}`,era:8,label:'fluxus'},
+  {file:`the-line-v3-daisy-09-compart.ogg?${DAISY_VERSION}`,era:9,label:'early computer art'},
+  {file:`the-line-v3-daisy-10-ascii.ogg?${DAISY_VERSION}`,era:10,label:'ascii'},
+  {file:`the-line-v3-daisy-11-demo.ogg?${DAISY_VERSION}`,era:11,label:'demoscene'},
+  {file:`the-line-v3-daisy-12-netart.ogg?${DAISY_VERSION}`,era:12,label:'net art'},
+  {file:`the-line-v3-daisy-13-glitch.ogg?${DAISY_VERSION}`,era:13,label:'glitch art'},
+  {file:`the-line-v3-daisy-14-circuit.ogg?${DAISY_VERSION}`,era:14,label:'circuit bending'},
+  {file:`the-line-v3-daisy-15-livecode.ogg?${DAISY_VERSION}`,era:15,label:'live coding'}
+];
+let pendingAutoplay=true;
+let playingEra=-1;
+let activeMode='idle';
+let currentSegmentIndex=-1;
+let resumeOnPlay=false;
+let nextSegmentTimer=0;
+
+// CHARACTER SETS per era - the material bands
+const CH={
+  cave:    '░▒▓█▓▒░░▒▓',
+  cunei:   '𒀀𒁀𒂀𒃀𒄀𒅀𒆀𒇀𒈀',
+  manuscript:'❧✦❦☙✠✝✤✥✧',
+  press:   '▌█▐▌█▐▌▀▄█',
+  concrete:'  . · ∘ ○ ◌ ',
+  typewr:  '@#$%&()_=+~',
+  telegraph:'·─·──···─·─',
+  bauhaus: '■▲●◆═╬▬□△○',
+  fluxus:  'ABCDEFGHIJKLM',
+  compart: '╱╲╳╱╲╳│─┼╱╲',
+  ascii:   '/\\|_-=+<>[]{}',
+  demo:    '►◄▸◂0123456789ABCDEF',
+  netart:  '<>/\\{}()[]#&;',
+  glitch:  '█̷░̸▓̶▒̴█̷░̸▓̶▒̴',
+  circuit: '─┤├)(┬⏚+│┼',
+  livecode:'(){}[];=>+-*',
+  noise:   '·∙.·∙:·∙.·',
+};
+
+// COLORS per era - hard, no blending
+const COL=[
+  [180,80,40],    // cave: ochre
+  [200,170,100],  // cuneiform: clay
+  [180,140,60],   // manuscript: gold
+  [160,160,160],  // press: lead
+  [255,255,255],  // concrete: white
+  [140,140,120],  // typewriter: metal
+  [80,200,255],   // telegraph: electric
+  [255,0,60],     // bauhaus: red
+  [255,255,200],  // fluxus: paper
+  [0,255,140],    // computer art: green phosphor
+  [0,200,255],    // ascii: terminal cyan
+  [255,255,0],    // demo: yellow scream
+  [255,0,180],    // netart: magenta
+  [255,40,0],     // glitch: red burn
+  [255,200,0],    // circuit: solder gold
+  [0,255,200],    // livecode: matrix green
+];
+
+const SPINE='│┃║│┃║│┃│║';
+
+// ─── CONTENT ───
+// each era: array of [relativeRow, text] pairs
+// text centered around col 50% with offset
+const eras=[];
+function era(id,charSet,title,year,glyph,desc,thread){
+  eras.push({id,charSet,title,year,glyph,desc,thread,lines:[]});
+  const e=eras[eras.length-1];
+  let r=0;
+  e.lines.push([r,'◆── '+year]);r+=2;
+  e.lines.push([r,title]);r+=2;
+  // glyph lines
+  const gl=glyph.split('\n');
+  for(const g of gl){e.lines.push([r,g]);r++;}
+  r++;
+  // desc lines
+  const dl=desc.split('\n');
+  for(const d of dl){e.lines.push([r,d]);r++;}
+  r++;
+  // thread
+  const tl=thread.split('\n');
+  for(const tt of tl){e.lines.push([r,tt]);r++;}
+  r+=2;
+  e.height=r;
+}
+
+era('cave','cave','CAVE PAINTING','~40,000 BCE',
+`        ░
+     ░▒░▓
+  ░▒▓█▓▒░░
+     ▒▓▓▒░
+        ░`,
+`the wall is not blank.
+a bulge becomes a bison shoulder.
+a crack becomes the horizon.
+the rock collaborates.
+
+pigment blown through bone tubes
+onto limestone that curves and cracks
+on its own terms. they USED those curves.
+
+the artifact of the substrate is signal.
+not noise. this is already glitch thinking.`,
+`→ the medium pushes back. the image is negotiation.`);
+
+era('cunei','cunei','CUNEIFORM','~3400 BCE',
+`   𒀀  𒁀  𒂀  𒃀  𒄀  𒅀`,
+`the first abstraction.
+the mark stops depicting. starts representing.
+
+but the SHAPE of cuneiform is pure physics:
+what happens when you push a cut reed
+into soft earth at an angle.
+
+the tool's body determines the symbol's body.
+same thing that makes pixel art look like pixel art.
+hardware-determined aesthetics. it never stopped.`,
+`→ the tool's physics dictates the symbol's form.`);
+
+era('manuscript','manuscript','ILLUMINATED MANUSCRIPTS','~600 CE',
+`       ❧ ✦ ❦ ☙ ✠ ❧`,
+`hand-copied code. character by character.
+decorative flourishes transform function
+into visual experience.
+
+errors were often PRESERVED.
+not corrected. the mistake becomes record.
+
+ligatures, abbreviations, ornamental capitals:
+functional compression that becomes beautiful.
+lossy encoding. 600 CE.`,
+`→ the error preserved. function becomes ornament.`);
+
+era('press','press','PRINTING PRESS','1440',
+`    ▌█▐▌█▐▌█▐▌█▐▌█▐▌█▐`,
+`fixed rectangular blocks on a grid.
+the first pixel matrix. gutenberg's bitmap.
+
+IMMEDIATELY people do two things:
+  1. use it correctly
+  2. push against it aesthetically
+
+that split between correct use and
+subversion of the same system runs
+through everything that follows.`,
+`→ grid constraint. correct use vs subversion. the only split.`);
+
+era('concrete','concrete','CONCRETE POETRY','~1897',
+`             w
+            o r
+           d s a
+            r e
+             s
+           h a p
+            e s`,
+`mallarme shatters the page grid.
+white space between words becomes content.
+
+breaks the gutenberg grid FROM WITHIN.
+using its own medium against its own conventions.
+
+the word is simultaneously:
+  meaning AND visual object AND spatial event.
+code poetry's direct ancestor.`,
+`→ breaking the grid from within. space as content.`);
+
+era('typewr','typewr','TYPEWRITER ART','~1898',
+`         ____
+        /    \\
+       | .  . |
+       |  \\/  |
+        \\____/`,
+`flora stacey's butterfly.
+a text machine forced to make images.
+the character set IS the palette.
+its limitations ARE the rules.
+
+the constraint generates the form.
+the constraint IS the form.`,
+`→ forcing a system past its design. constraint as method.`);
+
+era('telegraph','telegraph','TELEGRAPH / SIGNAL','~1830s',
+`    ·· ─── ·─· ─ ··· ─── ··─·`,
+`information transmitted. not inscribed.
+first time the medium introduces its OWN artifacts:
+
+  noise
+  crosstalk
+  signal degradation
+  the ghost in the wire
+
+the failure mode of communication
+becomes aesthetically charged.
+this never goes away.`,
+`→ transmission introduces artifact. noise is born.`);
+
+era('bauhaus','bauhaus','BAUHAUS / CONSTRUCTIVISM','1919',
+`       ■ ══ ▲ ══ ● ══ ◆`,
+`the grid isn't just layout.
+it's a worldview.
+
+strip ornament. reveal structure.
+typography as architecture.
+
+feeds directly into computer graphics
+and the modernist assumptions that
+net artists will later deliberately smash.
+
+build the temple before you desecrate it.`,
+`→ systematic design. the grid as ideology. setting up the break.`);
+
+era('fluxus','fluxus','FLUXUS / MAIL ART','1960s',
+`    INSTRUCTION:
+    light a match.
+    watch it until
+    it goes out.`,
+`art reduced to executable instruction.
+the SOURCE CODE of an experience.
+
+mail art: postal system as distribution protocol.
+envelope as interface.
+ray johnson = peer-to-peer networking
+decades before TCP/IP.
+
+the artwork is the transmission.
+not the object.`,
+`→ art as instruction set. network as medium.`);
+
+era('compart','compart','EARLY COMPUTER ART','1960s',
+`    ╱╲╱╲╱╲╱╲╱╲
+    ╲╱╲╱╲╱╲╱╲╱
+    ╱╲╱╲   ╱╲╱╲
+    ╲╱╲╱   ╲╱╲╱`,
+`vera molnar. frieder nake.
+the algorithm as collaborator.
+
+the machine accesses forms
+she couldn't have imagined alone.
+
+plotter drawings: negotiations between
+mathematical instruction and mechanical execution.
+
+the machine isn't a tool.
+it's a collaborator with tendencies.
+
+the loop back to the cave wall is explicit.`,
+`→ machine as collaborator. algorithmic negotiation.`);
+
+era('ascii','ascii','ASCII / ANSI / PETSCII','1960s-90s',
+`       /\\___/\\
+      ( o   o )
+      (  =^=  )
+       )     (`,
+`the character set IS the palette.
+95 printable characters. infinite images.
+
+ACiD. iCE. the BBS underground.
+16 colors. 256 characters.
+genuinely stunning work from nothing.
+
+the art exists BECAUSE of the constraint.
+same energy as building instruments
+from salvaged components.`,
+`→ constraint as generative force. the tighter the better.`);
+
+era('demo','demo','DEMOSCENE','1980s',
+`    >>> 64K <<< >>> 4K <<<`,
+`sixty-four kilobytes.
+make the impossible.
+
+every byte is contested territory.
+the entire practice = negotiation
+with the machine's limits.
+
+purest constraint-as-medium since
+the cave painter with five pigments
+and a bone tube.`,
+`→ limitation IS the generative force. scarcity as engine.`);
+
+era('netart','netart','NET.ART','1990s',
+`  ⟨A HREF=""⟩████⟨/A⟩
+  ⟨FRAME SRC="void"⟩
+  ⟨/FRAMESET⟩`,
+`JODI. olia lialina. heath bunting.
+the browser is the canvas.
+HTML is the paint.
+
+what the machine does UNDERNEATH
+the user-friendly surface.
+
+peel back the interface.
+show infrastructure.
+reveal the machinery.`,
+`→ revealing infrastructure. the network as material.`);
+
+era('glitch','glitch','GLITCH ART','2000s',
+`  █̷̗̘̀́▒̸̨̛̜̝▓̶̢̗̘░̴̧̛̗̘█̷̗̘̀́▒̸̨̛̜̝▓̶̢̗̘░̴̧̛̗̘`,
+`the codec's logic made visible.
+the compression artifact was always there.
+glitch refuses to hide it.
+
+datamosh: remove the keyframes. see what's underneath.
+hex edit: rewrite the file's body. hear it scream.
+
+the cave painter used the rock's bump as a shoulder.
+the glitch artist uses JPEG blocks as composition.
+
+the loop closes.`,
+`→ artifact as signal. the medium asserts itself. back to the cave.`);
+
+era('circuit','circuit','CIRCUIT BENDING / HARDWARE','2000s',
+`  +5V──┤├──⏚──)(──┬──GND
+                    │
+                 [VOICE]`,
+`the salvaged component has its own voice.
+short-circuit as composition.
+
+a speak & spell isn't being broken.
+its hidden possibilities are being revealed.
+
+this collapses the entire timeline:
+  cave     = material's own properties
+  typewriter = system forced past its design
+  glitch   = failure mode as content
+
+all three. simultaneously.
+voltage and solder. physical space.`,
+`→ the entire timeline collapses into solder and voltage.`);
+
+era('livecode','livecode','LIVE CODING','2010s',
+`  d1 $ s "bd sn"
+     # speed 0.9
+     |+ n "<0 3 7>"`,
+`the code IS the performance.
+the algorithm IS the instrument.
+source projected. audience watches.
+
+fuses:
+  fluxus    = score as art
+  demoscene = beauty from constraint
+  net.art   = source as material
+
+every typo is a glitch.
+every bug is a feature.
+the negotiation made visible.`,
+`→ the negotiation is the performance. code as score.`);
+
+const ERA_INFO={
+  cave:{
+    simple:`This is the beginning of the line: images made with the shape of a real surface in mind.
+
+Early cave painting was not just "drawing on a wall." The wall itself mattered. A bump could become a shoulder. A crack could become a back or a horizon. That is why this timeline starts here: the material is already part of the picture.`,
+    why:`Why it matters now:
+digital artists still do this. We use the texture, bug, compression block, scanline, terminal cell, or browser frame the way cave painters used the rock.`,
+    links:[
+      ['UNESCO: Vézère Valley / Lascaux context','https://whc.unesco.org/en/list/85/']
+    ]
+  },
+  cunei:{
+    simple:`Cuneiform looks abstract, but its shape is deeply physical. A reed pressed into wet clay makes wedge marks. The writing system grows out of that repeated action.
+
+For a beginner, the key point is simple: symbols are never separate from tools. The mark looks the way it looks because of the tool, the angle, and the surface.`,
+    why:`Why it matters now:
+fonts, pixels, terminal grids, and low-resolution screens all do the same thing. Hardware leaves fingerprints on language.`,
+    links:[
+      ['British Museum: How to write cuneiform','https://www.britishmuseum.org/blog/how-write-cuneiform']
+    ]
+  },
+  manuscript:{
+    simple:`Illuminated manuscripts were copied by hand, one character at a time. They carried text, decoration, mistakes, corrections, shortcuts, and ornament all in the same object.
+
+If you do not know the field: think of these books as slow, manual interfaces where reading and image-making are fused.`,
+    why:`Why it matters now:
+they show that text has never been "just content." Layout, ornament, and error have always shaped meaning.`,
+    links:[
+      ['British Library: Digitised manuscripts','https://www.bl.uk/research/digitised-manuscripts']
+    ]
+  },
+  press:{
+    simple:`The printing press standardised the page. Reusable blocks, repeated forms, and rigid alignment made text reproducible at scale.
+
+This is where the grid becomes dominant. Once that happens, every later experiment can either obey the grid or fight it.`,
+    why:`Why it matters now:
+most digital design still inherits assumptions from print: columns, blocks, margins, alignment, repeatability.`,
+    links:[]
+  },
+  concrete:{
+    simple:`Concrete poetry treats words as shapes, not only as statements. The spacing matters. The placement matters. Silence on the page matters.
+
+For someone new to this: the poem is not just what the words say. The poem is also the visual arrangement.`,
+    why:`Why it matters now:
+this is one of the cleanest bridges between literature, graphic design, code poetry, and screen-based text art.`,
+    links:[
+      ['MoMA: Ecstatic Alphabets / Heaps of Language','https://www.moma.org/calendar/exhibitions/1214'],
+      ['MoMA: Apollinaire’s visual poetry','https://www.moma.org/explore/inside_out/2014/02/27/apollinaires-visual-poetry/']
+    ]
+  },
+  typewr:{
+    simple:`Typewriter art forces a writing machine to behave like an image machine. The available characters become the palette. The spacing system becomes the grid.
+
+Beginners often think the machine is limiting the artist. It is, but that limitation is also what gives the work its character.`,
+    why:`Why it matters now:
+ASCII art, emoji mosaics, terminal drawing, and character shaders all inherit this exact logic.`,
+    links:[]
+  },
+  telegraph:{
+    simple:`The telegraph shifts the story from marks on a surface to signals moving through a network. Once communication travels electrically, new problems appear: noise, loss, interference, delay.
+
+That matters because many later aesthetics are built from those failures.`,
+    why:`Why it matters now:
+glitch art, packet loss, datamoshing, and broken streams all descend from this moment where transmission itself becomes visible.`,
+    links:[]
+  },
+  bauhaus:{
+    simple:`Bauhaus and related modernist design movements treated typography as structure. Text was no longer decoration around an image; it could be the architecture of the composition.
+
+This is useful for non-specialists because it explains why so much later digital design looks gridded and engineered.`,
+    why:`Why it matters now:
+before artists could break the interface, designers first had to harden it into a system.`,
+    links:[
+      ['Bauhaus-Archiv: Bauhaus typography','https://www.bauhaus.de/en/research/publications/bauhaus-typography/']
+    ]
+  },
+  fluxus:{
+    simple:`Fluxus made instructions, scores, kits, actions, and ordinary objects into art. Sometimes the work was barely an object at all. It might just be a prompt for something to happen.
+
+The simple version: art can be a rule, not a picture.`,
+    why:`Why it matters now:
+that idea runs straight into conceptual software art, executable text, score-based performance, and live coding.`,
+    links:[
+      ['MoMA: Fluxus overview','https://www.moma.org/collection/terms/fluxus'],
+      ['MoMA: George Brecht, Water Yam','https://www.moma.org/collection/works/149315']
+    ]
+  },
+  compart:{
+    simple:`Early computer art is not only art made with computers. It is art shaped by algorithms, plotting devices, machine speed, and procedural repetition.
+
+For a beginner, the important shift is this: the artist writes a system and the system generates form.`,
+    why:`Why it matters now:
+generative art, shader art, procedural animation, and software-based image making all grow out of this move.`,
+    links:[
+      ['MoMA: Vera Molnar','https://www.moma.org/collection/artists/37083'],
+      ['MoMA: Vera Molnar, Molndrian (1974)','https://www.moma.org/collection/works/417832'],
+      ['MoMA: Thinking Machines exhibition','https://www.moma.org/calendar/exhibitions/3863']
+    ]
+  },
+  ascii:{
+    simple:`ASCII and related character sets turned text itself into image material. The screen could not show much, so people used what was available: letters, numbers, punctuation, color limitations, fixed grids.
+
+This is one of the most direct ancestors of the work in this repository.`,
+    why:`Why it matters now:
+it proves that reduced systems are not weaker systems. Constraint can intensify style.`,
+    links:[]
+  },
+  demo:{
+    simple:`The demoscene is a culture built around making machines do things they are not supposed to be able to do, often under absurd size limits like 64K or 4K.
+
+For non-experts: imagine programming as competitive sculpture under severe memory limits.`,
+    why:`Why it matters now:
+the demoscene pushes optimization, compression, audiovisual synthesis, and machine intimacy to an extreme.`,
+    links:[
+      ['Demozoo: Second Reality (1993)','https://demozoo.org/productions/108/'],
+      ['Demozoo: fr-08 .the .product (2000)','https://demozoo.org/productions/10103/']
+    ]
+  },
+  netart:{
+    simple:`Net art uses the web itself as the medium. Not just images on a website, but the actual language and structure of the web: frames, links, browser defaults, broken markup, loading behavior, network context.
+
+That is why this matters to this repository. HTML is not just a container here. It is the material.`,
+    why:`Why it matters now:
+net art revealed that the browser has its own visual language, politics, memory, and failure modes.`,
+    links:[
+      ['Rhizome / Net Art Anthology: Olia Lialina','https://anthology.rhizome.org/my-boyfriend-came-back-from-the-war'],
+      ['Rhizome: Speaking in net language','https://rhizome.org/editorial/2016/nov/10/my-boyfriend-came-back-from-the-war/']
+    ]
+  },
+  glitch:{
+    simple:`Glitch art treats failure as form. Compression blocks, broken frames, codec errors, damaged files, and malformed data stop being hidden defects and become composition material.
+
+The accessible version is: instead of cleaning the artifact away, the artist studies it and uses it.`,
+    why:`Why it matters now:
+glitch turns infrastructure into surface. It lets the medium announce itself.`,
+    links:[]
+  },
+  circuit:{
+    simple:`Circuit bending and hardware hacking move the same logic into electronics. The object is opened, rerouted, shorted, or misused so that hidden behaviors become audible or visible.
+
+This is not just destruction. It is a search for the machine’s unofficial voice.`,
+    why:`Why it matters now:
+it is the hardware version of forcing a format, browser, codec, or language past its intended use.`,
+    links:[]
+  },
+  livecode:{
+    simple:`Live coding makes source code part of the performance. The audience sees the system changing while it runs. The code is not backstage documentation; it is the event.
+
+For beginners: the performer is editing the instrument while playing it.`,
+    why:`Why it matters now:
+it combines score, system, improvisation, and error into one visible act.`,
+    links:[
+      ['TOPLAP: About live coding','https://blog.toplap.org/about/'],
+      ['Live Coding: A User’s Manual','https://livecodingbook.toplap.org/book/']
+    ]
+  }
+};
+
+let activeReaderEra=-1;
+let activeReaderText='';
+
+// compute virtual positions
+let totalRows=8; // top padding
+for(const e of eras){
+  e.startRow=totalRows;
+  totalRows+=e.height;
+  totalRows+=2; // gap
+}
+totalRows+=12; // bottom
+
+// build lookup: virtualRow -> [{col, char, eraIdx}]
+const content=new Map();
+
+function layoutContent(){
+  if(!cols)return;
+  content.clear();
+  let maxLen=0;
+  for(const e of eras){
+    for(const [lr,text] of e.lines){
+      if(text.length>maxLen)maxLen=text.length;
+    }
+  }
+  const reserve=W>900?Math.floor(cols*0.38):0;
+  const workingCols=Math.max(24,cols-reserve);
+  const left=Math.max(2,Math.floor((workingCols-(maxLen+8))/2));
+  spineCol=left+1;
+  contentStartCol=left+7;
+  for(let ei=0;ei<eras.length;ei++){
+    const e=eras[ei];
+    for(const [lr,text] of e.lines){
+      const vr=e.startRow+lr;
+      if(!content.has(vr))content.set(vr,[]);
+      const row=content.get(vr);
+      for(let ci=0;ci<text.length;ci++){
+        if(text[ci]!==' '||text.charCodeAt(ci)===160){
+          // only store non-space or nbsp
+        }
+        row.push({col:contentStartCol+ci,ch:text[ci],era:ei});
+      }
+    }
+  }
+}
+
+// max scroll
+function maxScroll(){return Math.max(0,(totalRows-rows+4)*CELL);}
+
+// tears
+let tears=[];
+function updateTears(){
+  if(Math.random()<0.06)tears.push({
+    y:Math.floor(Math.random()*rows),
+    life:3+Math.random()*6,
+    offset:Math.floor(Math.random()*12-6),
+    thick:1+Math.floor(Math.random()*2)
+  });
+  tears=tears.filter(t=>(t.life-=0.12)>0);
+}
+
+function resize(){
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=W;cv.height=H;
+  cols=Math.floor(W/CW);
+  rows=Math.floor(H/CELL);
+  ctx.font=CELL+'px Courier New, monospace';
+  ctx.textBaseline='top';
+  layoutContent();
+}
+
+function getEraAt(vr){
+  for(let i=0;i<eras.length;i++){
+    if(vr>=eras[i].startRow&&vr<eras[i].startRow+eras[i].height)return i;
+  }
+  return -1;
+}
+
+function getClosestEra(vr){
+  let best=0;
+  let bestDist=Infinity;
+  for(let i=0;i<eras.length;i++){
+    const mid=eras[i].startRow+eras[i].height*0.5;
+    const d=Math.abs(vr-mid);
+    if(d<bestDist){
+      bestDist=d;
+      best=i;
+    }
+  }
+  return best;
+}
+
+function setAccentColor(ei){
+  const col=COL[Math.max(0,Math.min(COL.length-1,ei))];
+  document.documentElement.style.setProperty('--accent',`${col[0]},${col[1]},${col[2]}`);
+}
+
+function navigateToEra(ei){
+  const target=Math.max(0,Math.min(eras.length-1,ei));
+  activeReaderEra=-1;
+  updateReader(target);
+  scrollToEra(target);
+}
+
+function updateReader(ei){
+  if(ei<0||ei===activeReaderEra)return;
+  activeReaderEra=ei;
+  const e=eras[ei];
+  const info=ERA_INFO[e.id]||{simple:e.desc,why:e.thread,links:[]};
+  setAccentColor(ei);
+  readerNavLabel.textContent=`${String(ei+1).padStart(2,'0')} / ${String(eras.length).padStart(2,'0')}`;
+  readerTitle.textContent=e.title;
+  readerYear.textContent=e.year;
+  readerBody.textContent=info.simple;
+  readerWhy.textContent=info.why;
+  activeReaderText=`${e.title}. ${e.year}. ${info.simple} ${info.why}`;
+  readerLinks.innerHTML='';
+  for(const [label,url] of info.links){
+    const a=document.createElement('a');
+    a.className='readerLink';
+    a.href=url;
+    a.target='_blank';
+    a.rel='noreferrer noopener';
+    a.textContent='→ '+label;
+    readerLinks.appendChild(a);
+  }
+  const transcript=document.createElement('a');
+  transcript.className='readerLink';
+  transcript.href='the-line-v3-narration.txt';
+  transcript.target='_blank';
+  transcript.rel='noreferrer noopener';
+  transcript.textContent='→ Transcript / plain text';
+  readerLinks.appendChild(transcript);
+}
+
+function setSpeechStatus(text){
+  readerStatus.textContent=text;
+  playerReadout.textContent=text;
+}
+
+function scrollToEra(ei){
+  if(ei<0||!eras[ei])return;
+  const e=eras[ei];
+  const centerRow=e.startRow+e.height*0.5;
+  const desired=(centerRow-rows*0.42)*CELL;
+  targetScrollY=Math.max(0,Math.min(maxScroll(),desired));
+}
+
+function setPlayingEra(ei){
+  playingEra=ei;
+  if(ei>=0){
+    updateReader(ei);
+    scrollToEra(ei);
+    playerReadout.classList.add('playing');
+  }else{
+    playerReadout.classList.remove('playing');
+  }
+}
+
+function clearPlaybackState(){
+  if(nextSegmentTimer){
+    clearTimeout(nextSegmentTimer);
+    nextSegmentTimer=0;
+  }
+  activeMode='idle';
+  currentSegmentIndex=-1;
+  setPlayingEra(-1);
+}
+
+function playHal(autoplay=false){
+  if(nextSegmentTimer){
+    clearTimeout(nextSegmentTimer);
+    nextSegmentTimer=0;
+  }
+  activeMode='hal';
+  currentSegmentIndex=-1;
+  setPlayingEra(-1);
+  narrationAudio.pause();
+  try{narrationAudio.currentTime=0;}catch(_){}
+  narrationAudio.src=HAL_AUDIO;
+  narrationAudio.load();
+  narrationAudio.dataset.mode='hal-like';
+  setSpeechStatus(`${autoplay?'autoplay':'loading'} / hal-like`);
+  const playPromise=narrationAudio.play();
+  if(playPromise&&typeof playPromise.then==='function'){
+    playPromise.then(()=>{
+      pendingAutoplay=false;
+      resumeOnPlay=false;
+      hideAutoplayPrompt();
+      playerReadout.classList.add('playing');
+      setSpeechStatus('playing narration / hal-like');
+    }).catch(err=>{
+      clearPlaybackState();
+      if(autoplay){
+        showAutoplayPrompt();
+        setSpeechStatus('autoplay blocked / press play');
+      }else{
+        setSpeechStatus(`audio error / ${err&&err.message?err.message:'play failed'}`);
+      }
+    });
+  }
+}
+
+function playDaisySegment(index,autoplay=false){
+  if(nextSegmentTimer){
+    clearTimeout(nextSegmentTimer);
+    nextSegmentTimer=0;
+  }
+  const segment=DAISY_SEGMENTS[index];
+  if(!segment){
+    clearPlaybackState();
+    setSpeechStatus('daisy narration finished');
+    return;
+  }
+  activeMode='daisy';
+  currentSegmentIndex=index;
+  narrationAudio.pause();
+  try{narrationAudio.currentTime=0;}catch(_){}
+  narrationAudio.src=segment.file;
+  narrationAudio.load();
+  narrationAudio.dataset.mode='daisy-like';
+  setPlayingEra(segment.era);
+  setSpeechStatus(`${autoplay?'autoplay':'loading'} / daisy / ${index+1}/${DAISY_SEGMENTS.length} / ${segment.label}`);
+  const playPromise=narrationAudio.play();
+  if(playPromise&&typeof playPromise.then==='function'){
+    playPromise.then(()=>{
+      pendingAutoplay=false;
+      resumeOnPlay=false;
+      hideAutoplayPrompt();
+      setSpeechStatus(`playing daisy / ${index+1}/${DAISY_SEGMENTS.length} / ${segment.label}`);
+    }).catch(err=>{
+      clearPlaybackState();
+      if(autoplay){
+        showAutoplayPrompt();
+        setSpeechStatus('autoplay blocked / press play');
+      }else{
+        setSpeechStatus(`audio error / ${err&&err.message?err.message:'play failed'}`);
+      }
+    });
+  }
+}
+
+function showAutoplayPrompt(){
+  autoplayPrompt.classList.add('show');
+}
+
+function hideAutoplayPrompt(){
+  autoplayPrompt.classList.remove('show');
+}
+
+function stopSpeaking(){
+  narrationAudio.pause();
+  try{narrationAudio.currentTime=0;}catch(_){}
+  resumeOnPlay=false;
+  clearPlaybackState();
+  hideAutoplayPrompt();
+  setSpeechStatus('narration stopped');
+}
+
+function playNarration(mode,autoplay=false){
+  if(mode==='hal'){
+    playHal(autoplay);
+  }else{
+    playDaisySegment(0,autoplay);
+  }
+}
+
+narrationAudio.addEventListener('ended',()=>{
+  const finishedMode=activeMode;
+  if(activeMode==='daisy'&&currentSegmentIndex>=0){
+    nextSegmentTimer=setTimeout(()=>{
+      nextSegmentTimer=0;
+      playDaisySegment(currentSegmentIndex+1);
+    },140);
+    return;
+  }
+  clearPlaybackState();
+  setSpeechStatus(finishedMode==='hal'?'narration finished':'daisy narration finished');
+});
+narrationAudio.addEventListener('pause',()=>{
+  if(narrationAudio.currentTime>0&&!narrationAudio.ended){
+    setSpeechStatus('narration paused');
+  }
+  if(!narrationAudio.ended){
+    resumeOnPlay=true;
+    playerReadout.classList.remove('playing');
+  }
+});
+narrationAudio.addEventListener('error',()=>setSpeechStatus('audio file missing or unreadable'));
+
+speakBtn.addEventListener('click',()=>playNarration('daisy'));
+speakAllBtn.addEventListener('click',()=>playNarration('hal'));
+stopSpeakBtn.addEventListener('click',stopSpeaking);
+prevEraBtn.addEventListener('click',()=>navigateToEra((playingEra>=0?playingEra:activeReaderEra)-1));
+nextEraBtn.addEventListener('click',()=>navigateToEra((playingEra>=0?playingEra:activeReaderEra)+1));
+dockPlayBtn.addEventListener('click',()=>{
+  if(resumeOnPlay&&narrationAudio.src){
+    const playPromise=narrationAudio.play();
+    if(playPromise&&typeof playPromise.then==='function'){
+      playPromise.then(()=>{
+        playerReadout.classList.add('playing');
+        setSpeechStatus(activeMode==='daisy'&&currentSegmentIndex>=0?`playing daisy / ${currentSegmentIndex+1}/${DAISY_SEGMENTS.length} / ${DAISY_SEGMENTS[currentSegmentIndex].label}`:'playing narration');
+      }).catch(err=>{
+        setSpeechStatus(`audio error / ${err&&err.message?err.message:'play failed'}`);
+      });
+    }
+    return;
+  }
+  playNarration('daisy');
+});
+dockPauseBtn.addEventListener('click',()=>{
+  narrationAudio.pause();
+  playerReadout.classList.remove('playing');
+  resumeOnPlay=true;
+  setSpeechStatus(activeMode==='daisy'&&currentSegmentIndex>=0?`paused daisy / ${currentSegmentIndex+1}/${DAISY_SEGMENTS.length} / ${DAISY_SEGMENTS[currentSegmentIndex].label}`:'narration paused');
+});
+dockStopBtn.addEventListener('click',stopSpeaking);
+autoplayPromptBtn.addEventListener('click',()=>playNarration('daisy'));
+window.addEventListener('load',()=>setTimeout(()=>playNarration('daisy',true),120));
+function releaseAutoplayBlock(){
+  if(!pendingAutoplay)return;
+  playNarration('daisy',true);
+}
+window.addEventListener('pointerdown',releaseAutoplayBlock,{once:true});
+window.addEventListener('keydown',releaseAutoplayBlock,{once:true});
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft'){
+    e.preventDefault();
+    navigateToEra((playingEra>=0?playingEra:activeReaderEra)-1);
+  }else if(e.key==='ArrowRight'){
+    e.preventDefault();
+    navigateToEra((playingEra>=0?playingEra:activeReaderEra)+1);
+  }else if(e.key==='Home'){
+    e.preventDefault();
+    navigateToEra(0);
+  }else if(e.key==='End'){
+    e.preventDefault();
+    navigateToEra(eras.length-1);
+  }
+});
+
+function frame(){
+  t+=0.015;
+  updateTears();
+  if(click>0)click*=0.94;
+
+  // smooth scroll
+  scrollY+=(targetScrollY-scrollY)*0.12;
+  // smooth mouse
+  pmx+=(mx-pmx)*0.1;
+  pmy+=(my-pmy)*0.1;
+
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,W,H);
+
+  const scrollRow=scrollY/CELL;
+
+  // tear lookup
+  const tearSet=new Set();
+  const tearOff={};
+  for(const tr of tears){
+    for(let dy=0;dy<tr.thick;dy++){
+      tearSet.add(tr.y+dy);
+      tearOff[tr.y+dy]=tr.offset;
+    }
+  }
+
+  // mouse position in virtual grid
+  const mVR=pmy*rows+scrollRow;
+  const mVC=pmx*cols;
+  const focusEra=playingEra>=0?playingEra:getClosestEra(mVR);
+  updateReader(focusEra);
+
+  // shockwave
+  const shockRad=click>0.01?(1-click)*30:0;
+
+  for(let r=0;r<rows;r++){
+    const vr=Math.floor(r+scrollRow);
+    const isTear=tearSet.has(r);
+    const tOff=isTear?(tearOff[r]||0):0;
+    const eraIdx=getEraAt(vr);
+    const rowContent=content.get(vr);
+
+    for(let c=0;c<cols;c++){
+      const dc=c+tOff;
+      if(dc<0||dc>=cols)continue;
+
+      // find content at this position
+      let contentChar=null;
+      let contentEra=eraIdx;
+      if(rowContent){
+        for(const item of rowContent){
+          if(item.col===c){
+            contentChar=item.ch;
+            contentEra=item.era;
+            break;
+          }
+        }
+      }
+
+      // spine
+      const isSpine=(c===spineCol&&eraIdx>=0);
+
+      // distance to mouse (in grid units)
+      const dr=r+scrollRow-mVR;
+      const dcc=(c-mVC)*0.5; // aspect correction
+      const dist=Math.sqrt(dr*dr+dcc*dcc);
+
+      // resolve factor: 1=fully readable, 0=noise
+      const localResolve=Math.max(0,Math.min(1,1-dist/20));
+      const playingBoost=(contentEra===playingEra||eraIdx===playingEra)?0.28:0;
+      const resolve=Math.max(0.44+playingBoost,localResolve+playingBoost);
+      const hardResolve=Math.max(0,Math.min(1,(resolve-0.36)/0.42));
+
+      // shockwave distortion
+      let shockHit=false;
+      if(shockRad>0){
+        const sdr=r-(clickR-scrollRow);
+        const sdc=(c-clickCC)*0.5;
+        const sd=Math.sqrt(sdr*sdr+sdc*sdc);
+        if(Math.abs(sd-shockRad)<2){
+          shockHit=true;
+        }
+      }
+
+      let ch=' ';
+      let col=[40,40,40];
+
+      if(isSpine&&!contentChar){
+        // spine character
+        const si=Math.floor(t*3+vr)%SPINE.length;
+        ch=SPINE[si<0?0:si];
+        col=[60,60,60];
+        if(eraIdx>=0){
+          const ec=COL[eraIdx];
+          col=[ec[0]*0.25|0,ec[1]*0.25|0,ec[2]*0.25|0];
+        }
+      }else if(contentChar!==null){
+        const ei=contentEra>=0?contentEra:0;
+        const eCol=COL[ei];
+        const eChars=CH[eras[ei].id]||CH.noise;
+
+        if(contentChar===' '){
+          // space - maybe show faint noise
+          if(Math.random()<0.01&&resolve<0.46){
+            ch=eChars[Math.floor(Math.random()*eChars.length)];
+            col=[eCol[0]*0.06|0,eCol[1]*0.06|0,eCol[2]*0.06|0];
+          }
+        }else if(hardResolve>0.9||shockHit){
+          // resolved: show actual character
+          ch=contentChar;
+          const bright=0.7+Math.min(resolve,1)*0.42+(contentEra===playingEra?0.12:0);
+          col=[eCol[0]*bright|0,eCol[1]*bright|0,eCol[2]*bright|0];
+
+          // occasional flicker even when resolved
+          if(Math.random()<0.004*(1-resolve)){
+            ch=eChars[Math.floor(Math.random()*eChars.length)];
+          }
+        }else if(resolve>0.4){
+          // partially resolved: flicker between real and noise
+          if(Math.random()<0.74+hardResolve*0.26){
+            ch=contentChar;
+          }else{
+            ch=eChars[Math.floor(Math.random()*eChars.length)];
+          }
+          const bright=0.32+resolve*0.6+(contentEra===playingEra?0.08:0);
+          col=[eCol[0]*bright|0,eCol[1]*bright|0,eCol[2]*bright|0];
+        }else{
+          ch=Math.random()<0.92?contentChar:eChars[Math.floor(Math.random()*eChars.length)];
+          const bright=0.24+resolve*0.44+(contentEra===playingEra?0.06:0);
+          col=[eCol[0]*bright|0,eCol[1]*bright|0,eCol[2]*bright|0];
+        }
+      }else{
+        // empty space - sparse background noise
+        if(eraIdx>=0&&Math.random()<0.004){
+          const eChars=CH[eras[eraIdx].id]||CH.noise;
+          const eCol=COL[eraIdx];
+          ch=eChars[Math.floor(Math.random()*eChars.length)];
+          col=[eCol[0]*0.03|0,eCol[1]*0.03|0,eCol[2]*0.03|0];
+        }
+      }
+
+      // tear override
+      if(isTear&&ch!==' '){
+        col=[255-col[0],255-col[1],255-col[2]];
+        if(Math.random()<0.3){
+          const gset='@#$%&!?/\\|';
+          ch=gset[Math.floor(Math.random()*gset.length)];
+        }
+      }
+
+      // shockwave flash
+      if(shockHit&&ch!==' '){
+        col=[255,255,255];
+      }
+
+      // edge vignette
+      const edgeDist=Math.min(r,rows-r,c*0.5,(cols-c)*0.5);
+      if(edgeDist<3&&ch!==' '){
+        const f=edgeDist/3;
+        col=[col[0]*f|0,col[1]*f|0,col[2]*f|0];
+      }
+
+      if(ch!==' '){
+        ctx.fillStyle=`rgb(${col[0]},${col[1]},${col[2]})`;
+        ctx.fillText(ch,dc*CW,r*CELL);
+      }
+    }
+  }
+
+  // era markers on spine when far from mouse
+  for(let ei=0;ei<eras.length;ei++){
+    const e=eras[ei];
+    const screenR=e.startRow-scrollRow;
+    if(screenR<-5||screenR>rows+5)continue;
+    const eCol=COL[ei];
+    // dot marker
+    const markerBright=ei===playingEra?1:0.72;
+    ctx.fillStyle=`rgb(${Math.min(255,eCol[0]*markerBright)},${Math.min(255,eCol[1]*markerBright)},${Math.min(255,eCol[2]*markerBright)})`;
+    ctx.fillText(ei===playingEra?'█':'◆',spineCol*CW,(screenR)*CELL);
+  }
+
+  // cursor
+  ctx.fillStyle='#fff';
+  ctx.fillText('┼',mx*W-CW*0.5,my*H-CELL*0.4);
+
+  // scroll indicator - characters on right edge
+  if(maxScroll()>0){
+    const pct=scrollY/maxScroll();
+    const indR=Math.floor(pct*(rows-4))+2;
+    ctx.fillStyle='#444';
+    for(let r=2;r<rows-2;r++){
+      ctx.fillText('·',(cols-2)*CW,r*CELL);
+    }
+    ctx.fillStyle='#fff';
+    ctx.fillText('█',(cols-2)*CW,indR*CELL);
+  }
+
+  requestAnimationFrame(frame);
+}
+
+document.addEventListener('mousemove',e=>{
+  mx=e.clientX/W;my=e.clientY/H;
+});
+document.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  mx=e.touches[0].clientX/W;
+  my=e.touches[0].clientY/H;
+},{passive:false});
+document.addEventListener('click',e=>{
+  click=1;
+  clickR=my*rows+scrollY/CELL;
+  clickCC=mx*cols;
+});
+document.addEventListener('wheel',e=>{
+  e.preventDefault();
+  targetScrollY=Math.max(0,Math.min(maxScroll(),targetScrollY+e.deltaY*1.5));
+  // spawn tears on scroll
+  if(Math.abs(e.deltaY)>10){
+    tears.push({
+      y:Math.floor(Math.random()*rows),
+      life:4+Math.random()*6,
+      offset:Math.floor(Math.random()*16-8),
+      thick:1+Math.floor(Math.random()*3)
+    });
+  }
+},{passive:false});
+
+// touch scroll
+let touchY=0;
+document.addEventListener('touchstart',e=>{touchY=e.touches[0].clientY;});
+document.addEventListener('touchmove',e=>{
+  const dy=touchY-e.touches[0].clientY;
+  touchY=e.touches[0].clientY;
+  targetScrollY=Math.max(0,Math.min(maxScroll(),targetScrollY+dy*2));
+},{passive:false});
+
+window.addEventListener('resize',resize);
+resize();
+updateReader(0);
+frame();
+</script>
+</body>
+</html>
