@@ -14,5 +14,6 @@ Included pieces:
 - `physarum_zalgo.html`
 - `fractal.html`
 - `charsort.html`
+- `fibonacci_sphere.html`
 
 Open any file directly in a browser, or use the index at `index.html`.
