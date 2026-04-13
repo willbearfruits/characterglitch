@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0}
+body{background:#0a0406;overflow:hidden;cursor:none}
+canvas{display:block}
+#go{position:fixed;top:0;left:0;width:100%;height:100%;background:#0a0406;
+display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;
+font:12px/2.2 'Courier New',monospace;color:#441520;letter-spacing:2px;gap:24px}
+#go span{border:1px solid #441520;padding:14px 32px;cursor:pointer;transition:0.3s;letter-spacing:3px}
+#go span:hover{background:#441520;color:#0a0406}
+</style>
+</head>
+<body>
+<div id="go">
+<div style="opacity:0.5;text-align:center">my heart is a hexadecimal code<br>waiting to be corrupted</div>
+<span id="btn">PULSE</span>
+</div>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+const CELL=10;
+const PCELL=18; // poetry font size
+let W,H,cols,rows;
+let t=0,mx=0.5,my=0.5,pmx=0.5,pmy=0.5;
+let corruption=0;
+let shake={x:0,y:0};
+let trail,trailAge,trailChar,trailIsPo,localCorr,glow;
+let playTime=0,beatClock=0,beatPeriod=1.15,beatIntensity=1,beatDropped=false;
+
+const AB=['\u0300','\u0301','\u0302','\u0303','\u0307','\u0308','\u030A','\u030C','\u0311','\u0310'];
+const BL=['\u0323','\u0324','\u0325','\u0330','\u0331','\u0332','\u0347','\u0348'];
+const ST=['\u0334','\u0335','\u0336','\u0338'];
+const HX='0123456789ABCDEF';
+
+const POEMS=[
+  "my heart is a hexadecimal code waiting to be corrupted",
+  "every beat overwrites the last",
+  "you are the buffer overflow i never caught",
+  "corrupted sector chest left of center",
+  "memory leak in the organ that remembers everything",
+  "she exists in read only memory",
+  "the stack trace leads back to you",
+  "null pointer to where you used to be",
+  "still beating still beating still beating",
+  "garbage collection will not free this",
+  "unhandled exception still alive",
+  "fatal error heart not found",
+  "orphaned process still listening",
+  "checksum mismatch between what i feel and what i show",
+];
+
+const HS=1.35;
+const STAGE_NAMES=['stable','irregular','infected','failing','corrupted'];
+
+function hTest(fx,fy){
+  const nx=(fx-0.5)*60/HS,ny=(0.44-fy)*60/HS;
+  const px=nx/16,py=ny/13;
+  const imp=(px*px+py*py-1);
+  return imp*imp*imp-px*px*py*py*py;
+}
+
+function getDev(){
+  const p=Math.min(1,playTime/165);
+  const stage=p<0.16?0:p<0.36?1:p<0.58?2:p<0.8?3:4;
+  return{
+    p,stage,name:STAGE_NAMES[stage],
+    jitter:0.006+p*0.095,
+    accel:p*0.09,
+    weakChance:Math.max(0,p-0.18)*0.7,
+    dropChance:Math.max(0,p-0.6)*0.33,
+    glitchChance:0.08+p*0.78,
+    ambientCorruption:p*0.54,
+    sensorNoise:p*0.65,
+    turbulence:p*0.9,
+    escapeBoost:p*1.5,
+    rainBoost:p*1.4,
+    voidness:Math.max(0,p-0.45)*0.4,
+    blueShift:Math.floor(Math.max(0,p-0.28)*120),
+    outlineWarp:p*0.18,
+    glowSpread:1+p*1.3
+  };
+}
+function scheduleBeat(dev){
+  beatPeriod=Math.max(0.84,1.15-dev.accel+(Math.random()-0.5)*dev.jitter);
+  beatDropped=Math.random()<dev.dropChance;
+  beatIntensity=beatDropped?0.08:(Math.random()<dev.weakChance?0.58:1);
+}
+function beatVal(phase,intensity=1){
+  if(phase<0.122)return Math.sin(phase/0.122*Math.PI)*0.12*intensity;
+  if(phase>0.157&&phase<0.191)return-0.08*intensity;
+  if(phase>=0.191&&phase<0.226)return(-0.08+1.1*((phase-0.191)/0.035))*intensity;
+  if(phase>=0.226&&phase<0.278)return(1.02-1.2*((phase-0.226)/0.052))*intensity;
+  if(phase>0.348&&phase<0.504)return Math.sin((phase-0.348)/0.156*Math.PI)*0.2*intensity;
+  return 0;
+}
+function sqz(phase,intensity=1){
+  return(phase>0.191&&phase<0.452)?Math.sin((phase-0.191)/0.261*Math.PI)*0.16*intensity:0;
+}
+
+// escaped fragments - poetry chars that escape the heart
+let escaped=[];
+
+// hex rain
+let rain=[];
+
+// audio
+let actx,mGain,hBus,airBus,masterComp,masterDrive,audioReady=false;
+let rumbleOsc,rumbleGain,flutterOsc,flutterGain;
+function mkCurve(amount=80){
+  const n=2048,curve=new Float32Array(n);
+  for(let i=0;i<n;i++){
+    const x=i*2/n-1;
+    curve[i]=Math.tanh(x*(1+amount*0.03));
+  }
+  return curve;
+}
+function initAudio(){
+  actx=new(window.AudioContext||window.webkitAudioContext)();
+  mGain=actx.createGain();mGain.gain.value=0.62;
+  masterComp=actx.createDynamicsCompressor();
+  masterComp.threshold.value=-20;
+  masterComp.knee.value=18;
+  masterComp.ratio.value=4.5;
+  masterComp.attack.value=0.004;
+  masterComp.release.value=0.18;
+  masterDrive=actx.createWaveShaper();
+  masterDrive.curve=mkCurve(52);
+  masterDrive.oversample='4x';
+  hBus=actx.createGain();hBus.gain.value=0.94;
+  airBus=actx.createGain();airBus.gain.value=0.18;
+  hBus.connect(masterDrive);airBus.connect(masterDrive);
+  masterDrive.connect(masterComp);masterComp.connect(mGain);mGain.connect(actx.destination);
+
+  rumbleOsc=actx.createOscillator();rumbleOsc.type='sine';rumbleOsc.frequency.value=28;
+  const rumbleLP=actx.createBiquadFilter();rumbleLP.type='lowpass';rumbleLP.frequency.value=58;
+  rumbleGain=actx.createGain();rumbleGain.gain.value=0.018;
+  rumbleOsc.connect(rumbleLP);rumbleLP.connect(rumbleGain);rumbleGain.connect(hBus);rumbleOsc.start();
+
+  flutterOsc=actx.createOscillator();flutterOsc.type='sine';flutterOsc.frequency.value=0.11;
+  flutterGain=actx.createGain();flutterGain.gain.value=8;
+  flutterOsc.connect(flutterGain);flutterGain.connect(rumbleOsc.frequency);flutterOsc.start();
+  audioReady=true;
+}
+function thump(at,f0,f1,amp,len,grit){
+  const body=actx.createOscillator();body.type='triangle';
+  body.frequency.setValueAtTime(f0,at);
+  body.frequency.exponentialRampToValueAtTime(f1,at+len);
+  const bodyGain=actx.createGain();
+  bodyGain.gain.setValueAtTime(0.0001,at);
+  bodyGain.gain.exponentialRampToValueAtTime(amp,at+0.012);
+  bodyGain.gain.exponentialRampToValueAtTime(0.001,at+len);
+  const bodyLP=actx.createBiquadFilter();bodyLP.type='lowpass';
+  bodyLP.frequency.setValueAtTime(170+grit*80,at);
+  bodyLP.Q.value=0.8+grit*2;
+  body.connect(bodyLP);bodyLP.connect(bodyGain);bodyGain.connect(hBus);
+  body.start(at);body.stop(at+len+0.04);
+
+  const sub=actx.createOscillator();sub.type='sine';
+  sub.frequency.setValueAtTime(f0*0.52,at);
+  sub.frequency.exponentialRampToValueAtTime(Math.max(18,f1*0.58),at+len*1.15);
+  const subGain=actx.createGain();
+  subGain.gain.setValueAtTime(0.0001,at);
+  subGain.gain.exponentialRampToValueAtTime(amp*0.9,at+0.018);
+  subGain.gain.exponentialRampToValueAtTime(0.001,at+len*1.2);
+  sub.connect(subGain);subGain.connect(hBus);
+  sub.start(at);sub.stop(at+len*1.25);
+
+  const click=actx.createOscillator();click.type='square';
+  click.frequency.setValueAtTime(950+grit*900,at);
+  click.frequency.exponentialRampToValueAtTime(180+grit*160,at+0.016);
+  const clickHP=actx.createBiquadFilter();clickHP.type='highpass';clickHP.frequency.value=420;
+  const clickGain=actx.createGain();
+  clickGain.gain.setValueAtTime(0.0001,at);
+  clickGain.gain.linearRampToValueAtTime(0.05+grit*0.045,at+0.002);
+  clickGain.gain.exponentialRampToValueAtTime(0.001,at+0.02);
+  click.connect(clickHP);clickHP.connect(clickGain);clickGain.connect(airBus);
+  click.start(at);click.stop(at+0.025);
+
+  const bl=actx.sampleRate*Math.max(0.03,len*0.7);
+  const bf=actx.createBuffer(1,bl,actx.sampleRate),bd=bf.getChannelData(0);
+  for(let i=0;i<bl;i++){
+    const env=Math.exp(-i/bl*(10-grit*3));
+    bd[i]=(Math.random()*2-1)*env;
+  }
+  const ns=actx.createBufferSource();ns.buffer=bf;
+  const nf=actx.createBiquadFilter();nf.type='bandpass';
+  nf.frequency.value=85+grit*180;
+  nf.Q.value=0.7+grit*2.2;
+  const ng=actx.createGain();
+  ng.gain.setValueAtTime(0.12+grit*0.08,at);
+  ng.gain.exponentialRampToValueAtTime(0.001,at+len*0.8);
+  ns.connect(nf);nf.connect(ng);ng.connect(hBus);ns.start(at);
+}
+function corruptionBurst(at,cr){
+  if(cr<0.18)return;
+  const burst=actx.createOscillator();burst.type=cr>0.55?'square':'sawtooth';
+  burst.frequency.setValueAtTime(210+cr*420,at);
+  burst.frequency.exponentialRampToValueAtTime(62+cr*140,at+0.08+cr*0.06);
+  const burstGain=actx.createGain();
+  burstGain.gain.setValueAtTime(0.0001,at);
+  burstGain.gain.linearRampToValueAtTime(0.02+cr*0.045,at+0.006);
+  burstGain.gain.exponentialRampToValueAtTime(0.001,at+0.09+cr*0.07);
+  const burstHP=actx.createBiquadFilter();burstHP.type='bandpass';
+  burstHP.frequency.value=480+cr*1200;
+  burstHP.Q.value=1.5+cr*4;
+  burst.connect(burstHP);burstHP.connect(burstGain);burstGain.connect(airBus);
+  burst.start(at);burst.stop(at+0.12+cr*0.08);
+}
+function playBeat(dev=getDev()){
+  if(!audioReady)return;
+  const n=actx.currentTime,cr=corruption;
+  const heartRate=1+cr*0.12+dev.accel*0.45;
+  rumbleGain.gain.cancelScheduledValues(n);
+  rumbleGain.gain.setValueAtTime(0.018+cr*0.01+dev.p*0.008,n);
+  rumbleGain.gain.linearRampToValueAtTime(0.055+cr*0.03+dev.p*0.018,n+0.03);
+  rumbleGain.gain.exponentialRampToValueAtTime(0.017+cr*0.012+dev.p*0.005,n+0.34);
+  if(!beatDropped){
+    thump(n,58+cr*5-dev.p*4,31+cr*2-dev.p*2,0.5*beatIntensity+cr*0.14,0.16/heartRate,cr*0.55+dev.p*0.18);
+    thump(n+0.17/heartRate,76+cr*12+dev.p*8,39+cr*5+dev.p*4,0.34*beatIntensity+cr*0.1,0.11/heartRate,0.2+cr*0.9+dev.p*0.25);
+  }else{
+    thump(n,48,24,0.18,0.09,0.2+dev.p*0.2);
+  }
+  corruptionBurst(n+0.19/heartRate,cr+dev.p*0.25);
+  if(cr>0.5||dev.stage>=2)corruptionBurst(n+0.27/heartRate,cr*0.8+dev.p*0.2);
+}
+
+// agents
+const NA=4500;
+let ax,ay,ah,aType,aPoem,aPi,aEn;
+const SD=5,SA=0.5,TN=0.4;
+
+function initA(){
+  ax=new Float32Array(NA);ay=new Float32Array(NA);ah=new Float32Array(NA);
+  aType=new Uint8Array(NA);aPoem=new Int16Array(NA);aPi=new Int16Array(NA);
+  aEn=new Float32Array(NA); // energy for escape
+  for(let i=0;i<NA;i++)rsp(i,true);
+}
+
+function rsp(i,init){
+  const a=Math.random()*Math.PI*2;
+  const hx=16*Math.pow(Math.sin(a),3);
+  const hy=13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a);
+  const inward=0.08+Math.random()*0.88;
+  ax[i]=(0.5+(hx/60*HS)*inward)*cols;
+  ay[i]=(0.44-(hy/60*HS)*inward)*rows;
+  ah[i]=Math.random()*Math.PI*2;
+  aEn[i]=0;
+  if(Math.random()<0.18){
+    aType[i]=1;aPoem[i]=Math.floor(Math.random()*POEMS.length);
+    aPi[i]=init?Math.floor(Math.random()*POEMS[aPoem[i]].length):0;
+  }else{aType[i]=0;aPoem[i]=-1;aPi[i]=0;}
+}
+
+function senseT(x,y,h,off){
+  const sx=Math.floor(x+Math.cos(h+off)*SD),sy=Math.floor(y+Math.sin(h+off)*SD);
+  if(sx<0||sx>=cols||sy<0||sy>=rows)return 0;
+  return trail[sy*cols+sx];
+}
+
+function stepA(dev=getDev(),s=0){
+  const CX=0.5*cols,CY=0.44*rows;
+  for(let i=0;i<NA;i++){
+    const sL=senseT(ax[i],ay[i],ah[i],-SA);
+    const sC=senseT(ax[i],ay[i],ah[i],0);
+    const sR=senseT(ax[i],ay[i],ah[i],SA);
+    if(sC>=sL&&sC>=sR)ah[i]+=(Math.random()-0.5)*(0.15+dev.sensorNoise*0.24);
+    else if(sL>sR)ah[i]-=TN+Math.random()*(0.1+dev.sensorNoise*0.2);
+    else if(sR>sL)ah[i]+=TN+Math.random()*(0.1+dev.sensorNoise*0.2);
+    else ah[i]+=(Math.random()-0.5)*TN*(2+dev.sensorNoise*2.2);
+
+    // heartbeat turbulence
+    if(s>0.05)ah[i]+=(Math.random()-0.5)*s*(1.5+dev.turbulence*2.4);
+
+    // boundary
+    const nfx=(ax[i]+Math.cos(ah[i])*3)/cols;
+    const nfy=(ay[i]+Math.sin(ah[i])*3)/rows;
+    const nsdf=hTest(nfx,nfy);
+    if(nsdf>-0.01+s*(0.02+dev.outlineWarp*0.08)){
+      const dx=CX-ax[i],dy=CY-ay[i];
+      ah[i]=Math.atan2(dy,dx)+(Math.random()-0.5)*(1.0+dev.sensorNoise*1.5);
+      aEn[i]+=0.3+dev.escapeBoost*0.12; // energy builds at boundary
+    }
+
+    const spd=0.8+s*(2.0+dev.turbulence*1.5)+dev.p*0.12;
+    ax[i]+=Math.cos(ah[i])*spd;ay[i]+=Math.sin(ah[i])*spd;
+
+    const cfx=ax[i]/cols,cfy=ay[i]/rows;
+    const csdf=hTest(cfx,cfy);
+
+    // escape mechanic: high energy agents on beat can break through
+    if(csdf>0){
+      if(aEn[i]>2-dev.escapeBoost*0.55&&s>0.04){
+        // ESCAPE! spawn floating fragment
+        const ch=aType[i]===1&&aPoem[i]>=0?
+          POEMS[aPoem[i]][aPi[i]%POEMS[aPoem[i]].length]:
+          HX[Math.floor(Math.random()*16)];
+        escaped.push({
+          x:cfx*W,y:cfy*H,
+          vx:Math.cos(ah[i])*(1.5+dev.escapeBoost*0.8),vy:Math.sin(ah[i])*(1.5+dev.escapeBoost*0.9),
+          ch:ch,life:1,isPo:aType[i]===1,
+          size:aType[i]===1?PCELL+4+dev.stage:CELL+Math.floor(dev.stage*0.5)
+        });
+      }
+      rsp(i,false);continue;
+    }
+
+    aEn[i]*=0.98;
+
+    const gc=Math.floor(ax[i]),gr=Math.floor(ay[i]);
+    if(gc<0||gc>=cols||gr<0||gr>=rows){rsp(i,false);continue;}
+    const idx=gr*cols+gc;
+    trail[idx]+=0.65;trailAge[idx]=0;
+
+    if(aType[i]===1&&aPoem[i]>=0){
+      const p=POEMS[aPoem[i]];
+      const cc=p.charCodeAt(aPi[i]%p.length);
+      trailChar[idx]=cc;
+      trailIsPo[idx]=1;
+      aPi[i]++;
+    }else{
+      trailChar[idx]=HX.charCodeAt(Math.floor(Math.random()*16));
+      trailIsPo[idx]=0;
+    }
+  }
+}
+
+let pw=-1;
+
+function initRain(){
+  rain=[];
+  for(let i=0;i<Math.floor(cols*0.25);i++){
+    rain.push({x:Math.floor(Math.random()*cols),y:Math.random()*rows,
+      speed:0.12+Math.random()*0.3,len:3+Math.floor(Math.random()*8),
+      chars:Array.from({length:12},()=>HX[Math.floor(Math.random()*16)])});
+  }
+}
+
+function resize(){
+  W=window.innerWidth;H=window.innerHeight;cv.width=W;cv.height=H;
+  cols=Math.floor(W/(CELL*0.56));rows=Math.floor(H/CELL);
+  const sz=cols*rows;
+  trail=new Float32Array(sz);trailAge=new Float32Array(sz);
+  trailChar=new Uint16Array(sz);trailIsPo=new Uint8Array(sz);
+  localCorr=new Float32Array(sz);glow=new Float32Array(sz);
+  ctx.textBaseline='top';initA();initRain();
+}
+
+function frame(){
+  const dt=0.016;
+  t+=dt;
+  if(audioReady)playTime+=dt;
+  const dev=getDev();
+  pmx+=(mx-pmx)*0.05;pmy+=(my-pmy)*0.05;
+
+  beatClock+=dt;
+  while(beatClock>=beatPeriod){
+    beatClock-=beatPeriod;
+    scheduleBeat(dev);
+    pw=0;playBeat(dev);
+    shake.x=(Math.random()-0.5)*(3+corruption*6+dev.stage*2.4);
+    shake.y=(Math.random()-0.5)*(2+corruption*4+dev.stage*1.6);
+  }
+  const cyc=beatClock/beatPeriod;
+  shake.x*=0.84;shake.y*=0.84;
+  if(pw>=0)pw+=0.022;if(pw>1.5)pw=-1;
+
+  const msdf=hTest(pmx,pmy);
+  if(msdf<0.05)corruption=Math.min(0.95,corruption+0.00025+dev.p*0.00022);
+  corruption=Math.min(0.95,Math.max(dev.ambientCorruption,corruption+0.00002+dev.p*0.00006));
+
+  const mgc=Math.floor(pmx*cols),mgr=Math.floor(pmy*rows);
+  for(let dy=-3;dy<=3;dy++){for(let dx=-3;dx<=3;dx++){
+    const r2=mgr+dy,c2=mgc+dx;
+    if(r2>=0&&r2<rows&&c2>=0&&c2<cols&&Math.sqrt(dx*dx+dy*dy)<3.5)
+      localCorr[r2*cols+c2]=Math.min(1,localCorr[r2*cols+c2]+0.008);
+  }}
+
+  const bt=beatVal(cyc,beatIntensity),sq=Math.abs(sqz(cyc,beatIntensity));
+  stepA(dev,sq);
+
+  // diffuse + decay
+  for(let r=1;r<rows-1;r++){for(let c=1;c<cols-1;c++){
+    const i=r*cols+c;
+    trail[i]=(trail[i]*(0.8-dev.p*0.06)+(trail[i-1]+trail[i+1]+trail[i-cols]+trail[i+cols])*(0.05+dev.p*0.01))* (0.994-dev.voidness*0.01);
+    trailAge[i]+=0.005+dev.p*0.002;
+    localCorr[i]*=(0.998-dev.p*0.0015);
+    glow[i]*=(0.93-dev.p*0.025);
+  }}
+
+  // pulse deposits glow
+  if(pw>=0){
+    for(let r=0;r<rows;r++){for(let c=0;c<cols;c++){
+      const fx=c/cols,fy=r/rows;
+      const dc=Math.sqrt((fx-0.5)**2+(fy-0.44)**2);
+      const wd=Math.abs(dc-pw*0.3);
+      if(wd<0.035*dev.glowSpread&&trail[r*cols+c]>0.2)
+        glow[r*cols+c]=Math.max(glow[r*cols+c],1-wd/(0.035*dev.glowSpread));
+    }}
+  }
+
+  // update rain
+  for(const r of rain){
+    r.y+=r.speed;if(r.y>rows+r.len){r.y=-r.len;r.x=Math.floor(Math.random()*cols);}
+    if(Math.random()<0.04)r.chars[Math.floor(Math.random()*r.len)]=HX[Math.floor(Math.random()*16)];
+  }
+
+  // update escaped fragments
+  escaped=escaped.filter(e=>{
+    e.x+=e.vx;e.y+=e.vy;e.vy+=0.03;e.vx*=0.995;e.life-=0.006;
+    return e.life>0&&e.y<H+20;
+  });
+
+  ctx.save();ctx.translate(shake.x,shake.y);
+  ctx.fillStyle='#0a0406';ctx.fillRect(-10,-10,W+20,H+20);
+
+  // beat flash
+  if(cyc>0.191&&cyc<0.25){
+    ctx.fillStyle=`rgba(${45+dev.blueShift*0.2},3,${8+dev.blueShift*0.25},${(0.25-cyc)/0.059*(0.4+dev.p*0.18)})`;
+    ctx.fillRect(-10,-10,W+20,H+20);
+  }
+
+  const cw=CELL*0.56;
+
+  // RAIN outside heart
+  ctx.font=CELL+'px Courier New';
+  for(const r of rain){
+    for(let j=0;j<r.len;j++){
+      const ry=Math.floor(r.y-j);if(ry<0||ry>=rows)continue;
+      const fx=r.x/cols,fy=ry/rows;
+      if(hTest(fx,fy)<0.03)continue;
+      const fade=j===0?1:Math.max(0.08,1-j/r.len);
+      const bright=fade*(0.1+corruption*0.15+dev.rainBoost*0.08);
+      const rr=Math.floor(50*bright+corruption*30*bright);
+      const gg=Math.floor(8*bright);
+      const bb=Math.floor(15*bright+corruption*15*bright+dev.blueShift*0.2*bright);
+      if(rr>2){
+        ctx.fillStyle=`rgb(${rr},${gg},${bb})`;
+        ctx.fillText(r.chars[j%r.chars.length],r.x*cw,ry*CELL);
+      }
+    }
+  }
+
+  // HEART TISSUE
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      const idx=r*cols+c;
+      const v=trail[idx];if(v<0.1)continue;
+      const age=trailAge[idx],lc=localCorr[idx];
+      const tc=Math.min(1,corruption+lc);
+      const norm=Math.min(v/4,1);
+      const gl=glow[idx];
+      const fx=c/cols,fy=r/rows;
+      const isPo=trailIsPo[idx]===1;
+      if(dev.voidness>0.02&&Math.random()<dev.voidness*(0.08+0.18*(1-norm)))continue;
+
+      let ch=String.fromCharCode(trailChar[idx]||46);
+      if(tc>0.2&&Math.random()<tc*(0.1+dev.glitchChance*0.08))ch=HX[Math.floor(Math.random()*16)];
+      if(tc>0.5&&Math.random()<tc*(0.05+dev.glitchChance*0.05))ch=String.fromCharCode(0x2580+Math.floor(Math.random()*32));
+
+      // zalgo
+      let stack=Math.min(7,Math.floor(sq*8)+Math.floor(tc*3)+Math.floor(gl*2)+(age<0.02?1:0)+dev.stage);
+      let g2=ch;
+      const sd=c*71+r*131;
+      if(stack>=1)g2+=AB[(sd+Math.floor(t*3))%AB.length];
+      if(stack>=2)g2+=BL[(sd*3+Math.floor(t*2.5))%BL.length];
+      if(stack>=3)g2+=AB[(sd*7+Math.floor(t*4))%AB.length];
+      if(stack>=4)g2+=BL[(sd*11+Math.floor(t*3.5))%BL.length];
+      if(stack>=5)g2+=ST[(sd+Math.floor(t*5))%ST.length];
+      if(stack>=6)g2+=AB[(sd*13+Math.floor(t*6))%AB.length];
+      if(stack>=7)g2+=ST[(sd*17+Math.floor(t*7))%ST.length];
+
+      const pump=0.4+sq*2.5;
+      const af=Math.max(0.2,1-age*0.25);
+
+      let cr2,cg2,cb2;
+      if(isPo){
+        // poetry: warm bright rose-red, stands out
+        cr2=Math.floor((170+norm*85)*pump*af+gl*80+tc*15);
+        cg2=Math.floor((30+norm*22)*pump*af+gl*30-tc*12);
+        cb2=Math.floor((22+norm*15)*pump*af+gl*20+tc*18+dev.blueShift*(0.22+dev.p*0.08));
+      }else{
+        // hex: deep blood red
+        cr2=Math.floor((90+norm*90)*pump*af+gl*55+tc*25);
+        cg2=Math.floor((4+norm*5)*pump*af+gl*10-tc*3);
+        cb2=Math.floor((6+norm*7)*pump*af+gl*14+tc*18+dev.blueShift*(0.35+dev.p*0.1));
+      }
+      if(tc>0.3){cb2=Math.min(255,cb2+Math.floor(tc*25));}
+      if(age<0.015){cr2+=50;cg2+=15;cb2+=10;}
+      if(gl>0.3){cr2+=Math.floor(gl*60);cg2+=Math.floor(gl*20);cb2+=Math.floor(gl*15);}
+      cr2=Math.max(0,Math.min(255,cr2));cg2=Math.max(0,Math.min(255,cg2));cb2=Math.max(0,Math.min(255,cb2));
+      if(cr2<3&&cg2<3&&cb2<3)continue;
+
+      // RENDER - poetry gets big font
+      if(isPo){
+        ctx.font=PCELL+'px Courier New';
+        ctx.fillStyle=`rgb(${cr2},${cg2},${cb2})`;
+        ctx.fillText(g2,c*cw-2,r*CELL-4);
+        ctx.font=CELL+'px Courier New';
+      }else{
+        ctx.fillStyle=`rgb(${cr2},${cg2},${cb2})`;
+        ctx.fillText(g2,c*cw,r*CELL);
+      }
+    }
+  }
+
+  // ESCAPED FRAGMENTS floating outside
+  for(const e of escaped){
+    const alpha=Math.min(1,e.life*1.5);
+    let ch=e.ch;
+    if(corruption>0.3&&Math.random()<corruption*0.2)
+      ch+=AB[Math.floor(Math.random()*AB.length)];
+    if(corruption>0.5&&Math.random()<0.3)
+      ch+=BL[Math.floor(Math.random()*BL.length)];
+    ctx.font=(e.isPo?PCELL+2:CELL)+'px Courier New';
+    const r3=Math.min(255,Math.floor(200*alpha));
+    const g3=Math.floor(40*alpha);
+    const b3=Math.floor(30*alpha+corruption*40*alpha+dev.blueShift*0.45*alpha);
+    ctx.fillStyle=`rgb(${r3},${g3},${b3})`;
+    ctx.fillText(ch,e.x,e.y);
+  }
+
+  // heart outline
+  ctx.font=CELL+'px Courier New';
+  ctx.strokeStyle=`rgba(${55+dev.blueShift*0.15},10,${15+dev.blueShift*0.3},${0.06+sq*0.1+dev.p*0.06})`;ctx.lineWidth=1;ctx.beginPath();
+  for(let a=0;a<Math.PI*2;a+=0.015){
+    const hx=16*Math.pow(Math.sin(a),3);
+    const hy=13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a);
+    const warp=1+Math.sin(a*8+t*0.9)*dev.outlineWarp;
+    const sx=W*0.5+hx*(W*0.015*HS)*(1-sq*0.3)*warp;
+    const sy=H*0.44-hy*(H*0.015*HS)*(1+sq*0.15)*(1+Math.cos(a*6+t*0.7)*dev.outlineWarp*0.6);
+    a<0.015?ctx.moveTo(sx,sy):ctx.lineTo(sx,sy);
+  }
+  ctx.closePath();ctx.stroke();
+
+  // corruption meter
+  const mH=H*0.2,mY2=(H-mH)/2;
+  ctx.fillStyle='rgba(25,6,10,0.3)';ctx.fillRect(13,mY2,2,mH);
+  ctx.fillStyle=`rgba(${140+Math.floor(corruption*80)},${12},${25+Math.floor(corruption*20)+Math.floor(dev.blueShift*0.4)},0.5)`;
+  ctx.fillRect(13,mY2+mH*(1-corruption),2,mH*corruption);
+  ctx.font='7px Courier New';ctx.fillStyle='rgba(70,20,28,0.35)';
+  ctx.fillText(Math.floor(corruption*100)+'%',10,mY2+mH+10);
+  ctx.fillText(STAGE_NAMES[dev.stage],10,mY2-4);
+
+  // cursor
+  const curX=pmx*W,curY=pmy*H,cp=0.3+Math.max(0,bt)*0.5;
+  ctx.fillStyle=`rgba(190,50,60,${cp*0.45})`;
+  ctx.font=`${12+Math.floor(sq*4)}px Courier New`;
+  ctx.fillText('\u25CE',curX-5,curY-6);
+  ctx.font='8px Courier New';ctx.fillStyle=`rgba(110,28,38,${0.25+sq*0.25})`;
+  ctx.fillText('0x'+((Math.floor(pmx*255)<<8|Math.floor(pmy*255))&0xFFFF).toString(16).toUpperCase().padStart(4,'0'),curX+9,curY-2);
+
+  ctx.font=CELL+'px Courier New';ctx.restore();
+  requestAnimationFrame(frame);
+}
+
+document.addEventListener('mousemove',e=>{mx=e.clientX/W;my=e.clientY/H});
+document.addEventListener('touchmove',e=>{e.preventDefault();mx=e.touches[0].clientX/W;my=e.touches[0].clientY/H},{passive:false});
+document.addEventListener('click',()=>{
+  const dev=getDev();
+  beatDropped=false;beatIntensity=1;
+  pw=0;playBeat(dev);
+  shake.x=(Math.random()-0.5)*10;shake.y=(Math.random()-0.5)*7;
+  corruption=Math.min(0.95,corruption+0.03);
+  const gc=Math.floor(pmx*cols),gr=Math.floor(pmy*rows);
+  for(let dy=-8;dy<=8;dy++){for(let dx=-8;dx<=8;dx++){
+    const r2=gr+dy,c2=gc+dx;
+    if(r2>=0&&r2<rows&&c2>=0&&c2<cols){
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<8)localCorr[r2*cols+c2]=Math.min(1,localCorr[r2*cols+c2]+0.3*(1-d/8));
+    }
+  }}
+});
+document.addEventListener('wheel',e=>{e.preventDefault();
+  corruption=e.deltaY<0?Math.max(0,corruption-0.025):Math.min(0.95,corruption+0.015);
+},{passive:false});
+document.getElementById('btn').addEventListener('click',e=>{
+  e.stopPropagation();
+  initAudio();
+  playTime=0;beatClock=beatPeriod;beatIntensity=1;beatDropped=false;
+  scheduleBeat(getDev());
+  document.getElementById('go').style.display='none';
+});
+window.addEventListener('resize',resize);resize();frame();
+</script>
+</body>
+</html>
