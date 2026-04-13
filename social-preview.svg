@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#050704"/>
+  <rect x="42" y="42" width="1116" height="546" fill="none" stroke="#2b3424" stroke-width="2"/>
+
+  <g font-family="Courier New, monospace" font-size="13" fill="#3b4430" opacity="0.95">
+    <text x="70" y="96">···░░░▒▒▒▓▓▓···───╱╲───···░░░▒▒▒▓▓▓···───╱╲───···░░░▒▒▒▓▓▓···───╱╲───</text>
+    <text x="640" y="124">▒▒░░···═══///////═══···░░▒▒▓▓▓■■■▓▓▓▒▒░░···</text>
+    <text x="120" y="154">───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───┼───</text>
+    <text x="760" y="202">···╱╲···╱╲···╱╲···╱╲···╱╲···╱╲···</text>
+    <text x="86" y="244">▒▒▒▒▓▓▓▓■■■■▓▓▓▓▒▒▒▒······░░░░▒▒▒▒▓▓▓▓■■■■▓▓▓▓▒▒▒▒</text>
+    <text x="780" y="278">:::::::=======:::::::</text>
+    <text x="80" y="514">▒▒░░···───···▒▒░░···───···▒▒░░···───···▒▒░░···───···</text>
+    <text x="650" y="548">╲╱╲╱╲╱╲╱╲╱╲╱╲╱╲╱</text>
+  </g>
+
+  <g font-family="Courier New, monospace" font-size="16" fill="#b68d43" opacity="0.82">
+    <text x="136" y="175">╔══════════════════════════════════════════════════════════╗</text>
+    <text x="136" y="195">║                                                          ║</text>
+    <text x="136" y="215">║   ░░▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░        ║</text>
+    <text x="136" y="235">║ ░░▓▓████████████████████████████████████████████▓▓░░     ║</text>
+    <text x="136" y="255">║ ▒▓████████████████████████████████████████████████▓▒     ║</text>
+    <text x="136" y="275">║ ▓██████████████████████████████████████████████████▓     ║</text>
+    <text x="136" y="295">║ ▓██████████████████████████████████████████████████▓     ║</text>
+    <text x="136" y="315">║ ▒▓████████████████████████████████████████████████▓▒     ║</text>
+    <text x="136" y="335">║  ░▓██████████████████████████████████████████████▓░      ║</text>
+    <text x="136" y="355">║    ░▒▓████████████████████████████████████████▓▒░        ║</text>
+    <text x="136" y="375">║       ░▒▓████████████████████████████████▓▒░             ║</text>
+    <text x="136" y="395">║           ░▒▓██████████████████████▓▒░                   ║</text>
+    <text x="136" y="415">║              ░░▒▓▓██████████▓▓▒░░                        ║</text>
+    <text x="136" y="435">║                    ░░▒▒▓▓▒▒░░                            ║</text>
+    <text x="136" y="455">║                                                          ║</text>
+    <text x="136" y="475">╚══════════════════════════════════════════════════════════╝</text>
+  </g>
+
+  <g font-family="Courier New, monospace" fill="#efe1a3">
+    <text x="84" y="98" font-size="38" letter-spacing="3">CHARACTER GLITCH</text>
+    <text x="86" y="134" font-size="17" fill="#9daf89">character-only browser experiments</text>
+    <text x="86" y="560" font-size="16" fill="#9daf89">zalgo vortex / de jong organism / mycelium network / physarum zalgo / fractal / charsort</text>
+  </g>
+
+  <g font-family="Courier New, monospace" font-size="16" fill="#d7bc79">
+    <text x="842" y="214">signal</text>
+    <text x="842" y="246" fill="#f0e6b2">◌̸ ╱╲ ◌̴</text>
+    <text x="842" y="296">field</text>
+    <text x="842" y="328" fill="#f0e6b2">glyph density / attractors / swarms</text>
+    <text x="842" y="378">route</text>
+    <text x="842" y="410" fill="#f0e6b2">willbearfruits.github.io/characterglitch</text>
+  </g>
+</svg>
