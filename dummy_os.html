@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dummy OS</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:#040503;overflow:hidden;cursor:none}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c');
+const ctx=cv.getContext('2d');
+
+const CELL=16;
+const CW=CELL*0.58;
+const BG='#040503';
+const INK='#b4c99c';
+const SOFT='#66765d';
+const HOT='#d6b66a';
+const COLD='#7ab7bf';
+const ALERT='#e38871';
+
+let W=0,H=0,cols=0,rows=0,t=0;
+let mx=0.5,my=0.5;
+let pointerGlyph='⌖';
+let consoleInput='scan /memory';
+let logSeed=0;
+let windows=[];
+let activeWindow='process';
+let popupTimer=0;
+let trace=[];
+let systemMode='idle';
+let modeTimer=0;
+
+const treeBase=[
+  'root/',
+  '├─ boot/',
+  '├─ sys/',
+  '│  ├─ glyph/',
+  '│  ├─ marrow/',
+  '│  └─ pulse/',
+  '├─ home/',
+  '│  ├─ spores/',
+  '│  ├─ relics/',
+  '│  └─ daisy.txt',
+  '└─ dev/null'
+];
+
+const processNames=[
+  'kernel.wake','glyph.cache','pulse.watch','spore.scan','memory.rot','mycelial.net',
+  'zalgo.sync','node.trace','dummy.windowd','hex.heartd','line.reader'
+];
+
+const logLexicon=[
+  'thread recovered from dead sector',
+  'cursor entered soft rot',
+  'network bloom detected',
+  'cache replaced with spores',
+  'archive checksum became song',
+  'process returned as a branch',
+  'window manager grew teeth',
+  'memory map shifted left',
+  'socket opened into dirt',
+  'heartbeat accepted corruption',
+  'node cluster brightened',
+  'cold channel carried residue'
+];
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+const ZALGO_ABOVE='̍̎̄̅̿̑̆̐͒͗̓̔̽̌͂';
+const ZALGO_BELOW='̖̗̘̙̜̝̞̟̠̤̥̦̩';
+const ZALGO_MID='̛̀́̕';
+const GLITCH_SWAP='╳╋◇◆█▓▒░#%&*';
+
+function zalgoify(text,intensity=0.18){
+  let out='';
+  for(const ch of text){
+    out+=ch;
+    if(!/[A-Za-z0-9]/.test(ch))continue;
+    if(Math.random()<intensity)out+=ZALGO_ABOVE[Math.floor(Math.random()*ZALGO_ABOVE.length)];
+    if(Math.random()<intensity*0.6)out+=ZALGO_BELOW[Math.floor(Math.random()*ZALGO_BELOW.length)];
+    if(Math.random()<intensity*0.35)out+=ZALGO_MID[Math.floor(Math.random()*ZALGO_MID.length)];
+  }
+  return out;
+}
+
+function corruptToken(text,intensity=0.2){
+  let base='';
+  for(const ch of text){
+    let next=ch;
+    if(/[A-Za-z]/.test(ch)&&Math.random()<intensity*0.24){
+      next=GLITCH_SWAP[Math.floor(Math.random()*GLITCH_SWAP.length)];
+    }else if(ch==='.'&&Math.random()<intensity*0.5){
+      next='╱';
+    }else if(ch==='_'&&Math.random()<intensity*0.45){
+      next='╲';
+    }else if(ch==='-'&&Math.random()<intensity*0.35){
+      next='=';
+    }
+    base+=next;
+  }
+  return zalgoify(base,intensity);
+}
+
+function resize(){
+  W=innerWidth;
+  H=innerHeight;
+  cv.width=W;
+  cv.height=H;
+  cols=Math.floor(W/CW);
+  rows=Math.floor(H/CELL);
+  ctx.font=CELL+'px Courier New';
+  ctx.textBaseline='top';
+  buildWindows();
+}
+
+function buildWindows(){
+  const pad=2;
+  const top=2;
+  const leftW=Math.max(26,Math.floor(cols*0.22));
+  const centerW=Math.max(34,Math.floor(cols*0.36));
+  const rightW=Math.max(24,cols-leftW-centerW-pad*4);
+  const upperH=Math.max(12,Math.floor(rows*0.36));
+  const lowerH=Math.max(12,rows-upperH-top-pad*4);
+  const leftLowerH=Math.max(8,Math.floor(lowerH*0.48));
+  const fractalH=Math.max(8,lowerH-leftLowerH-pad);
+
+  windows=[
+    {id:'tree',x:pad,y:top+2,w:leftW,h:upperH+1,title:'FILE TREE'},
+    {id:'process',x:leftW+pad*2,y:top+2,w:centerW,h:upperH,title:'PROCESS MONITOR'},
+    {id:'memory',x:leftW+centerW+pad*3,y:top+2,w:rightW,h:upperH,title:'HEX MEMORY'},
+    {id:'console',x:leftW+pad*2,y:upperH+top+3,w:centerW+rightW+pad,h:lowerH,title:'CONSOLE'},
+    {id:'network',x:pad,y:upperH+top+3,w:leftW,h:leftLowerH,title:'NETWORK FIELD'},
+    {id:'fractal',x:pad,y:upperH+top+3+leftLowerH+pad,w:leftW,h:fractalH,title:'FRACTAL CORE'}
+  ];
+}
+
+function randHex(){
+  return Math.floor(Math.random()*256).toString(16).padStart(2,'0');
+}
+
+function pushTrace(msg){
+  trace.unshift(msg);
+  if(trace.length>11)trace.length=11;
+}
+
+for(let i=0;i<8;i++)pushTrace(`[boot ${String(i).padStart(2,'0')}] ${logLexicon[i]}`);
+
+function write(text,x,y,color=INK){
+  if(x<0||y<0||x>=cols||y>=rows)return;
+  write3d(text,x,y,color,0,1);
+}
+
+function write3d(text,x,y,color=INK,z=0,alpha=1){
+  ctx.save();
+  ctx.globalAlpha=alpha;
+  ctx.fillStyle=color;
+  ctx.translate(x*CW,y*CELL);
+  ctx.fillText(text,0,0);
+  ctx.restore();
+}
+
+function fillLine(y,ch,color,alpha=1){
+  for(let x=0;x<cols;x++)write3d(ch,x,y,color,0,alpha);
+}
+
+function getWindowZ(win,index){
+  return 0;
+}
+
+function drawBox(win,index){
+  const active=activeWindow===win.id;
+  const line=active?HOT:SOFT;
+  const zAmt=systemMode==='breach'?0.42:0.12;
+  const titleBase=active?' '+win.title+' ':' '+win.title.toLowerCase()+' ';
+  const title=corruptToken(titleBase,active?0.32+zAmt:0.2+zAmt*0.8);
+
+  write('┌'+'─'.repeat(win.w-2)+'┐',win.x,win.y,line);
+  for(let y=1;y<win.h-1;y++){
+    write3d('│',win.x,win.y+y,line,0,1);
+    write3d('│',win.x+win.w-1,win.y+y,line,0,1);
+  }
+  write3d('└'+'─'.repeat(win.w-2)+'┘',win.x,win.y+win.h-1,line,0,1);
+  write3d(title.slice(0,win.w-4),win.x+2,win.y,line,0,1);
+}
+
+function inside(win,px,py){
+  return px>=win.x&&px<win.x+win.w&&py>=win.y&&py<win.y+win.h;
+}
+
+function drawBackground(){
+  ctx.fillStyle=BG;
+  ctx.fillRect(0,0,W,H);
+
+  const vx=(0.5+(mx-0.5)*0.18)*cols;
+  const vy=(0.5+(my-0.5)*0.18)*rows;
+  for(let y=0;y<rows;y++){
+    const drift=Math.sin(t*0.23+y*0.12)*0.5+0.5;
+    for(let x=0;x<cols;x++){
+      const dx=x/cols-mx;
+      const dy=y/rows-my;
+      const md=Math.sqrt(dx*dx+dy*dy);
+      const haze=0.02+Math.max(0,0.11-md*0.28);
+      const n=Math.sin(x*0.19+y*0.11+t*0.7)+Math.cos(x*0.03-y*0.14-t*0.2);
+      const px=x-vx;
+      const py=y-vy;
+      const tunnel=Math.abs(Math.atan2(py,px)/Math.PI)+Math.abs(Math.sin(Math.sqrt(px*px+py*py)*0.15-t*2))*0.25;
+      if(Math.random()<0.012+haze*0.7){
+        const glyph=tunnel<0.12?'╱':n>1?'·':n>0.2?'░':n>-0.5?'┈':' ';
+        if(glyph!==' ')write(glyph,x,y,n>0.9?HOT:SOFT);
+      }else if(Math.random()<0.003*drift){
+        write('¦',x,y,COLD);
+      }else if(systemMode==='breach'&&Math.random()<0.008&&tunnel<0.16){
+        write('█',x,y,ALERT);
+      }
+    }
+  }
+}
+
+function drawTopBar(){
+  const label=corruptToken(` dummy.os / glyph shell / ${systemMode} mode `,0.24+(systemMode==='breach'?0.16:0));
+  const status=` load ${((Math.sin(t*0.9)*0.5+0.5)*0.61+0.18).toFixed(2)}  mem ${Math.floor(54+Math.sin(t*0.4)*12)}%  net ${Math.floor(12+Math.cos(t*0.7)*5)} `;
+  fillLine(0,'─',SOFT,0.45);
+  write3d(label,2,0,INK,0,1);
+  write3d(corruptToken(status,0.12),Math.max(2,cols-status.length-2),0,HOT,0,1);
+}
+
+function drawTree(win,index){
+  drawBox(win,index);
+  for(let i=0;i<win.h-2&&i<treeBase.length;i++){
+    let line=treeBase[i];
+    if(i===3+Math.floor((Math.sin(t*0.8)+1)*1.5))line=line.replace('glyph','glyph*');
+    if(i===9&&Math.sin(t*1.2)>0.6)line='│  └─ daisy.ogg';
+    write3d(corruptToken(line.padEnd(win.w-3,' ').slice(0,win.w-2),0.12+(systemMode==='breach'?0.16:0)),win.x+1,win.y+1+i,i===0?HOT:INK,0,1);
+  }
+  const foot='[enter] open  [tab] drift  [space] breach';
+  write3d(corruptToken(foot.slice(0,win.w-2),0.1),win.x+1,win.y+win.h-2,SOFT,0,1);
+}
+
+function drawProcess(win,index){
+  drawBox(win,index);
+  write3d(corruptToken('pid   proc               cpu   mem   state',0.16),win.x+2,win.y+1,SOFT,0,1);
+  for(let i=0;i<win.h-4;i++){
+    const name=processNames[i%processNames.length];
+    const cpu=Math.floor(3+Math.abs(Math.sin(t*0.8+i*0.7))*86);
+    const mem=Math.floor(4+Math.abs(Math.cos(t*0.5+i))*38);
+    const state=cpu>72?'hot':cpu>40?'awake':Math.sin(t+i)>0?'idle':'wait';
+    const corruption=0.24+(systemMode==='breach'?0.24:0)+(cpu>72?0.14:0)+Math.max(0,Math.sin(t*1.6+i*0.9))*0.12;
+    const nameGlitch=corruptToken(name.padEnd(18,' ').slice(0,18),corruption);
+    const stateGlitch=corruptToken(state,corruption*1.15);
+    const marker=i===Math.floor((t*2.4)%Math.max(1,win.h-4))?'◆':'·';
+    const line=`${String(130+i).padEnd(5,' ')} ${nameGlitch} ${String(cpu).padStart(3,' ')}%  ${String(mem).padStart(3,' ')}%  ${stateGlitch}`;
+    write3d(corruptToken(marker+' '+line.slice(0,win.w-5),corruption*0.42),win.x+1,win.y+2+i,cpu>72?HOT:state==='wait'?COLD:INK,0,1);
+  }
+  const meterW=win.w-4;
+  const hot=Math.floor((Math.sin(t*1.3)*0.5+0.5)*meterW);
+  write3d('['+'█'.repeat(hot)+'░'.repeat(Math.max(0,meterW-hot))+']',win.x+2,win.y+win.h-2,ALERT,0,1);
+}
+
+function drawMemory(win,index){
+  drawBox(win,index);
+  const rowsAvail=win.h-3;
+  for(let i=0;i<rowsAvail;i++){
+    const base=(i*16).toString(16).padStart(4,'0');
+    let line=base+': ';
+    for(let j=0;j<8;j++){
+      line+=randHex()+' ';
+    }
+    const accent=(i+Math.floor(t*3))%5===0;
+    if(accent){
+      const p=4+(Math.floor(t*7)%8)*3;
+      line=line.slice(0,p)+'ff '+line.slice(p+3);
+    }
+    write3d(corruptToken(line.slice(0,win.w-2),accent?0.16:0.08+(systemMode==='scan'?0.1:0)),win.x+1,win.y+1+i,accent?COLD:INK,0,1);
+  }
+}
+
+function drawConsole(win,index){
+  drawBox(win,index);
+  const visible=win.h-4;
+  for(let i=0;i<visible&&i<trace.length;i++){
+    const text=trace[i];
+    const col=text.includes('boot')?SOFT:i===0?HOT:INK;
+    write3d(corruptToken(text.slice(0,win.w-3),0.16+(i===0?0.1:0)+(systemMode==='breach'?0.16:0)),win.x+1,win.y+1+i,col,0,1);
+  }
+  const prompt=corruptToken('> '+consoleInput+(Math.sin(t*4)>0?'_':' '),0.14+(systemMode==='breach'?0.14:0));
+  write3d(prompt.slice(0,win.w-3),win.x+1,win.y+win.h-2,INK,0,1);
+}
+
+function drawNetwork(win,index){
+  drawBox(win,index);
+  const innerW=win.w-2;
+  const innerH=win.h-2;
+  for(let y=0;y<innerH;y++){
+    for(let x=0;x<innerW;x++){
+      const gx=win.x+1+x;
+      const gy=win.y+1+y;
+      const n=Math.sin(x*0.35+t*1.3)+Math.cos(y*0.42-t*0.9)+Math.sin((x+y)*0.18+t*0.6+(systemMode==='listen'?0.7:0));
+      let ch=' ';
+      let col=SOFT;
+      if(n>1.65){ch='◆';col=HOT;}
+      else if(n>1.05){ch='┼';col=INK;}
+      else if(n>0.45){ch=(x+y+Math.floor(t*3))%2?'╱':'╲';col=COLD;}
+      else if(n>-0.1&&Math.random()<0.3){ch='·';col=SOFT;}
+      if(ch!==' ')write3d(ch,gx,gy,col,0,1);
+    }
+  }
+}
+
+function drawFractal(win,index){
+  drawBox(win,index);
+  const innerW=win.w-2;
+  const innerH=win.h-2;
+  const cx=innerW*0.5+(mx-0.5)*3.4;
+  const cy=innerH*0.5+(my-0.5)*2.2;
+  const zoom=1.25+Math.sin(t*0.17)*0.2+(systemMode==='breach'?0.34:0);
+  const glyphs=' ·░▒▓█◌◇◆';
+
+  for(let y=0;y<innerH;y++){
+    for(let x=0;x<innerW;x++){
+      let zx=(x-cx)/(innerW*0.34*zoom);
+      let zy=(y-cy)/(innerH*0.46*zoom);
+      let i=0;
+      while(zx*zx+zy*zy<4&&i<14){
+        const xt=zx*zx-zy*zy-0.745+Math.sin(t*0.11)*0.06;
+        zy=2*zx*zy+0.186+Math.cos(t*0.13)*0.05;
+        zx=xt;
+        i++;
+      }
+      if(i<2)continue;
+      const idx=Math.min(glyphs.length-1,Math.floor((i/14)*(glyphs.length-1)));
+      const ch=glyphs[idx];
+      const col=i>11?HOT:i>8?COLD:i>5?INK:SOFT;
+      write3d(ch,win.x+1+x,win.y+1+y,col,0,0.95);
+    }
+  }
+}
+
+function drawPopup(){
+  if(popupTimer<=0)return;
+  const w=Math.min(42,cols-6);
+  const h=7;
+  const x=Math.floor((cols-w)/2);
+  const y=Math.floor((rows-h)/2);
+  drawBox({id:'popup',x,y,w,h,title:'SYSTEM NOTICE'},6);
+  write3d(corruptToken('dummy.os is performing nothing convincingly.',0.26),x+2,y+2,HOT,0,1);
+  write3d(corruptToken('all windows are decorative but unstable.',0.22),x+2,y+3,INK,0,1);
+  write3d(corruptToken('[ click ] acknowledge residue',0.14),x+2,y+5,COLD,0,1);
+}
+
+function executeCommand(){
+  const cmd=consoleInput.trim().toLowerCase();
+  popupTimer=0;
+  if(cmd.startsWith('scan')){
+    systemMode='scan';
+    modeTimer=7.5;
+    activeWindow='memory';
+    pushTrace('[exec] memory scan widened');
+  }else if(cmd.startsWith('listen')){
+    systemMode='listen';
+    modeTimer=7.5;
+    activeWindow='network';
+    pushTrace('[exec] node chorus exposed');
+  }else if(cmd.includes('ghost')||cmd.includes('breach')){
+    systemMode='breach';
+    modeTimer=9.5;
+    popupTimer=2.8;
+    pushTrace('[exec] breach route opened');
+  }else if(cmd.startsWith('open')){
+    systemMode='scan';
+    modeTimer=5.5;
+    popupTimer=2.2;
+    pushTrace(`[exec] ${cmd} returned residue`);
+  }else{
+    popupTimer=2;
+    pushTrace(`[exec] ${cmd||'null'} produced static`);
+  }
+}
+
+function tickLogs(){
+  if(Math.floor(t*2.2)!==logSeed){
+    logSeed=Math.floor(t*2.2);
+    const verb=logLexicon[logSeed%logLexicon.length];
+    const stamp=String(logSeed).padStart(3,'0');
+    pushTrace(`[${stamp}] ${verb}`);
+    if(Math.random()<0.3){
+      consoleInput=['scan /memory','tail /trace','open /sys/glyph','route --ghost','listen /node'][Math.floor(Math.random()*5)];
+    }
+  }
+}
+
+function render(){
+  t+=0.016;
+  tickLogs();
+  if(popupTimer>0)popupTimer-=0.016;
+  if(modeTimer>0){
+    modeTimer-=0.016;
+    if(modeTimer<=0)systemMode='idle';
+  }
+
+  drawBackground();
+  drawTopBar();
+  drawTree(windows[0],0);
+  drawProcess(windows[1],1);
+  drawMemory(windows[2],2);
+  drawConsole(windows[3],3);
+  drawNetwork(windows[4],4);
+  drawFractal(windows[5],5);
+  drawPopup();
+
+  const px=mx*cols;
+  const py=my*rows;
+  write3d(pointerGlyph,Math.floor(px),Math.floor(py),Math.sin(t*7)>0?HOT:INK,0.2,1);
+  requestAnimationFrame(render);
+}
+
+function chooseWindow(clientX,clientY){
+  const gx=Math.floor(clientX/CW);
+  const gy=Math.floor(clientY/CELL);
+  for(let i=windows.length-1;i>=0;i--){
+    if(inside(windows[i],gx,gy))return windows[i].id;
+  }
+  return null;
+}
+
+document.addEventListener('mousemove',e=>{
+  mx=e.clientX/W;
+  my=e.clientY/H;
+});
+
+document.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  mx=e.touches[0].clientX/W;
+  my=e.touches[0].clientY/H;
+},{passive:false});
+
+document.addEventListener('click',e=>{
+  mx=e.clientX/W;
+  my=e.clientY/H;
+  const hit=chooseWindow(e.clientX,e.clientY);
+  if(hit)activeWindow=hit;
+  else popupTimer=3.2;
+  pointerGlyph=Math.random()<0.5?'⌖':'◆';
+  pushTrace(`[clk] focus -> ${hit||'shell'}`);
+});
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Tab'){
+    e.preventDefault();
+    const idx=windows.findIndex(w=>w.id===activeWindow);
+    activeWindow=windows[(idx+1)%windows.length].id;
+    pushTrace(`[tab] focus -> ${activeWindow}`);
+    return;
+  }
+  if(e.key===' '){
+    e.preventDefault();
+    systemMode=systemMode==='breach'?'idle':'breach';
+    modeTimer=systemMode==='breach'?9.5:0;
+    pushTrace(`[mode] ${systemMode}`);
+    return;
+  }
+  if(e.key==='Enter'){
+    executeCommand();
+    return;
+  }
+  if(e.key==='Backspace'){
+    consoleInput=consoleInput.slice(0,-1);
+    return;
+  }
+  if(e.key.length===1&&consoleInput.length<28){
+    consoleInput+=e.key;
+  }
+});
+
+window.addEventListener('resize',resize);
+resize();
+render();
+</script>
+</body>
+</html>

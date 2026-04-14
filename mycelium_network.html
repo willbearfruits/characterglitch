@@ -19,6 +19,238 @@ let trail,age,dir,density,pulse;
 let mx=0.5,my=0.5;
 let t=0;
 let hyphae=[];
+let actx,masterGain,grainBus,nodeBus,bedGain,audioReady=false;
+let noiseBuffer,nextGrainTime=0,lastNodeVoice=0;
+let bedOscA,bedOscB,bedLfo;
+let prevPulseNorm=0,prevNodeNorm=0,audioPan=0;
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+function buildNoiseBuffer(){
+  const len=actx.sampleRate*2;
+  noiseBuffer=actx.createBuffer(1,len,actx.sampleRate);
+  const data=noiseBuffer.getChannelData(0);
+  let prev=0;
+  for(let i=0;i<len;i++){
+    prev=prev*0.94+(Math.random()*2-1)*0.18;
+    data[i]=prev;
+  }
+}
+
+function initAudio(){
+  actx=new (window.AudioContext||window.webkitAudioContext)();
+  masterGain=actx.createGain();
+  masterGain.gain.value=0.22;
+
+  const comp=actx.createDynamicsCompressor();
+  comp.threshold.value=-26;
+  comp.knee.value=18;
+  comp.ratio.value=4;
+  comp.attack.value=0.01;
+  comp.release.value=0.22;
+
+  grainBus=actx.createGain();
+  grainBus.gain.value=0.22;
+  nodeBus=actx.createGain();
+  nodeBus.gain.value=0.18;
+  bedGain=actx.createGain();
+  bedGain.gain.value=0.02;
+
+  grainBus.connect(masterGain);
+  nodeBus.connect(masterGain);
+  masterGain.connect(comp);
+  comp.connect(actx.destination);
+
+  buildNoiseBuffer();
+
+  const bedFilter=actx.createBiquadFilter();
+  bedFilter.type='lowpass';
+  bedFilter.frequency.value=420;
+  bedFilter.Q.value=0.4;
+  bedFilter.connect(bedGain);
+  bedGain.connect(masterGain);
+
+  bedOscA=actx.createOscillator();
+  bedOscA.type='triangle';
+  bedOscA.frequency.value=58;
+  bedOscB=actx.createOscillator();
+  bedOscB.type='sine';
+  bedOscB.frequency.value=91;
+  bedLfo=actx.createOscillator();
+  bedLfo.type='sine';
+  bedLfo.frequency.value=0.07;
+  const lfoGain=actx.createGain();
+  lfoGain.gain.value=8;
+  bedLfo.connect(lfoGain);
+  lfoGain.connect(bedOscB.detune);
+
+  bedOscA.connect(bedGain);
+  bedOscB.connect(bedFilter);
+  bedOscA.start();
+  bedOscB.start();
+  bedLfo.start();
+
+  nextGrainTime=actx.currentTime+0.06;
+  lastNodeVoice=0;
+  audioReady=true;
+}
+
+function bootAudio(){
+  try{
+    if(!actx)initAudio();
+    if(actx.state!=='running')actx.resume();
+  }catch(err){
+    audioReady=false;
+  }
+}
+
+function scheduleNoiseGrain(at,freq,dur,amp,pan){
+  if(!audioReady||!noiseBuffer)return;
+  const src=actx.createBufferSource();
+  src.buffer=noiseBuffer;
+  src.playbackRate.value=clamp(freq/320,0.35,2.4);
+
+  const filter=actx.createBiquadFilter();
+  filter.type='bandpass';
+  filter.frequency.value=freq;
+  filter.Q.value=clamp(3+freq/120,3,12);
+
+  const gain=actx.createGain();
+  gain.gain.setValueAtTime(0,at);
+  gain.gain.linearRampToValueAtTime(amp,at+Math.min(0.018,dur*0.35));
+  gain.gain.exponentialRampToValueAtTime(0.0001,at+dur);
+
+  src.connect(filter);
+  filter.connect(gain);
+
+  if(actx.createStereoPanner){
+    const p=actx.createStereoPanner();
+    p.pan.value=pan;
+    gain.connect(p);
+    p.connect(grainBus);
+  }else{
+    gain.connect(grainBus);
+  }
+
+  const maxOffset=Math.max(0,noiseBuffer.duration-dur-0.01);
+  src.start(at,Math.random()*maxOffset,dur);
+  src.stop(at+dur+0.02);
+}
+
+function scheduleNodeBloom(at,freq,amp,pan){
+  if(!audioReady)return;
+  const osc=actx.createOscillator();
+  osc.type='triangle';
+  osc.frequency.value=freq;
+  const sub=actx.createOscillator();
+  sub.type='sine';
+  sub.frequency.value=freq*0.5;
+
+  const filter=actx.createBiquadFilter();
+  filter.type='lowpass';
+  filter.frequency.value=freq*3.4;
+  filter.Q.value=0.7;
+
+  const gain=actx.createGain();
+  gain.gain.setValueAtTime(0.0001,at);
+  gain.gain.linearRampToValueAtTime(amp,at+0.04);
+  gain.gain.exponentialRampToValueAtTime(0.0001,at+0.42);
+
+  osc.connect(filter);
+  sub.connect(filter);
+  filter.connect(gain);
+
+  if(actx.createStereoPanner){
+    const p=actx.createStereoPanner();
+    p.pan.value=pan;
+    gain.connect(p);
+    p.connect(nodeBus);
+  }else{
+    gain.connect(nodeBus);
+  }
+
+  osc.start(at);
+  sub.start(at);
+  osc.stop(at+0.48);
+  sub.stop(at+0.48);
+}
+
+function triggerSporeBurst(sx,sy){
+  if(!audioReady)return;
+  const now=actx.currentTime+0.01;
+  const pan=clamp(sx*2-1,-0.9,0.9);
+  const base=170+sy*230+Math.random()*70;
+  for(let i=0;i<3;i++){
+    scheduleNoiseGrain(now+i*0.024,base+i*55,0.08+i*0.015,0.026-i*0.005,pan+(Math.random()-0.5)*0.35);
+  }
+  scheduleNodeBloom(now+0.02,base*0.66,0.028,pan*0.7);
+}
+
+function triggerPulseCrackle(strength,pan,cy){
+  if(!audioReady)return;
+  const now=actx.currentTime+0.01;
+  const count=3+Math.floor(strength*6);
+  const base=210+(1-cy)*240+strength*140;
+  for(let i=0;i<count;i++){
+    const at=now+i*(0.008+Math.random()*0.014);
+    const freq=base+Math.random()*260+(i%2)*70;
+    const dur=0.022+Math.random()*0.04;
+    const amp=0.01+strength*0.016-Math.min(i*0.0012,0.006);
+    scheduleNoiseGrain(at,freq,dur,amp,clamp(pan+(Math.random()-0.5)*0.55,-1,1));
+  }
+}
+
+function updateAudio(stats){
+  if(!audioReady||!actx)return;
+  const now=actx.currentTime;
+  const cells=Math.max(1,cols*rows);
+  const growth=clamp(stats.liveCells/(cells*0.06),0,1);
+  const nodes=clamp(stats.nodeCells/120,0,1);
+  const tips=clamp(stats.tipCells/90,0,1);
+  const pulses=clamp(stats.pulseEnergy/240,0,1);
+  const centerX=stats.weight>0?stats.sumX/stats.weight:0.5;
+  const centerY=stats.weight>0?stats.sumY/stats.weight:0.5;
+  const branchiness=clamp(stats.branchCells/220,0,1);
+  const freshness=clamp(stats.freshEnergy/180,0,1);
+  const activity=clamp(growth*0.28+tips*0.2+nodes*0.14+pulses*0.2+branchiness*0.18,0,1);
+  const pulseRise=Math.max(0,pulses-prevPulseNorm);
+  const nodeRise=Math.max(0,nodes-prevNodeNorm);
+  audioPan+=(centerX*2-1-audioPan)*0.14;
+
+  bedGain.gain.setTargetAtTime(0.005+growth*0.012+nodes*0.018,now,0.35);
+  grainBus.gain.setTargetAtTime(0.14+activity*0.28+pulses*0.12+freshness*0.08,now,0.12);
+  nodeBus.gain.setTargetAtTime(0.08+nodes*0.18+branchiness*0.05,now,0.2);
+  masterGain.gain.setTargetAtTime(0.17+growth*0.06+nodes*0.06+pulses*0.04,now,0.22);
+
+  bedOscA.frequency.setTargetAtTime(46+(1-centerY)*18+growth*22+nodes*12,now,0.28);
+  bedOscB.frequency.setTargetAtTime(78+(1-centerY)*34+growth*48+pulses*24,now,0.22);
+
+  if(now>=nextGrainTime){
+    const grains=2+Math.floor(activity*2)+Math.floor(pulses*2)+(Math.random()<branchiness*0.7?1:0);
+    for(let i=0;i<grains;i++){
+      const spread=(Math.random()-0.5)*(0.3+branchiness*0.9);
+      const freq=120+(1-centerY)*160+growth*110+nodes*170+pulses*180+freshness*120+Math.random()*150;
+      const dur=0.018+tips*0.026+branchiness*0.016+Math.random()*0.016;
+      const amp=0.008+activity*0.012+pulses*0.006+freshness*0.006;
+      scheduleNoiseGrain(now+i*(0.006+Math.random()*0.01),freq,dur,amp,clamp(audioPan+spread,-1,1));
+    }
+    nextGrainTime=now+clamp(0.19-activity*0.085-pulses*0.05-branchiness*0.04,0.035,0.19);
+  }
+
+  if((nodes>0.1||pulses>0.18)&&now-lastNodeVoice>0.28-nodes*0.1){
+    if(Math.random()<0.1+nodes*0.2+pulses*0.16+nodeRise*1.8){
+      scheduleNodeBloom(now+0.01,98+(1-centerY)*52+nodes*120+Math.random()*60,0.018+nodes*0.036+pulses*0.014,clamp(audioPan*0.7+(Math.random()-0.5)*0.35,-0.8,0.8));
+      lastNodeVoice=now;
+    }
+  }
+
+  if(pulseRise>0.025||nodeRise>0.018){
+    triggerPulseCrackle(clamp(pulseRise*5+nodeRise*6+pulses*0.4,0.18,1),audioPan,centerY);
+  }
+
+  prevPulseNorm+=(pulses-prevPulseNorm)*0.3;
+  prevNodeNorm+=(nodes-prevNodeNorm)*0.26;
+}
 
 // directional line-drawing characters
 const HDIR={
@@ -213,16 +445,30 @@ function frame(){
   ctx.fillStyle='#06050a';
   ctx.fillRect(0,0,W,H);
 
+  let liveCells=0,nodeCells=0,tipCells=0,pulseEnergy=0,branchCells=0,freshEnergy=0;
+  let sumX=0,sumY=0,weight=0;
+
   for(let r=0;r<rows;r++){
     for(let c=0;c<cols;c++){
       const idx=r*cols+c;
       const v=trail[idx];
       if(v<0.08)continue;
 
+      liveCells++;
+
       const a=age[idx];
       const d=density[idx];
       const p=pulse[idx];
       const norm=Math.min(v/6,1);
+      pulseEnergy+=Math.min(p,1.5);
+      if(d>6)nodeCells++;
+      else if(d>3)branchCells++;
+      if(a<0.05)tipCells++;
+      if(a<0.25)freshEnergy+=1-a*2.4;
+      const w=norm*(1+p*0.35+(a<0.12?0.8:0)+(d>6?0.55:0));
+      sumX+=(c/Math.max(cols-1,1))*w;
+      sumY+=(r/Math.max(rows-1,1))*w;
+      weight+=w;
 
       // CHARACTER based on type
       let ch;
@@ -296,14 +542,20 @@ function frame(){
   ctx.fillStyle='rgba(200,255,220,0.7)';
   ctx.fillText('\u2316',curX-4,curY-5);
 
+  if(audioReady)updateAudio({liveCells,nodeCells,tipCells,pulseEnergy,branchCells,freshEnergy,sumX,sumY,weight});
+
   requestAnimationFrame(frame);
 }
 
 document.addEventListener('mousemove',e=>{mx=e.clientX/W;my=e.clientY/H});
 document.addEventListener('touchmove',e=>{e.preventDefault();mx=e.touches[0].clientX/W;my=e.touches[0].clientY/H},{passive:false});
+document.addEventListener('pointerdown',bootAudio);
+document.addEventListener('keydown',bootAudio);
+document.addEventListener('touchstart',bootAudio,{passive:true});
 
 // click: drop a cluster of spores
 document.addEventListener('click',e=>{
+  bootAudio();
   const sx=e.clientX/W,sy=e.clientY/H;
   for(let i=0;i<5;i++){
     spawnSpore(sx+(Math.random()-0.5)*0.03,sy+(Math.random()-0.5)*0.03);
@@ -318,6 +570,7 @@ document.addEventListener('click',e=>{
       pulse[r2*cols+c2]=3;
     }
   }
+  triggerSporeBurst(sx,sy);
 });
 
 window.addEventListener('resize',resize);
