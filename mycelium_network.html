@@ -20,80 +20,139 @@ let trail,age,dir,density,pulse;
 let mx=0.5,my=0.5;
 let t=0;
 let hyphae=[];
-let actx,masterGain,grainBus,nodeBus,bedGain,audioReady=false;
-let noiseBuffer,nextGrainTime=0,lastNodeVoice=0;
-let bedOscA,bedOscB,bedLfo;
+let started=false;
+let actx,masterGain,tipBus,threadBus,branchBus,nodeBus,pulseBus,audioReady=false;
+let delaySend,spaceDelay,delayFeedback,delayFilter,delayWet;
+let driveHP,drivePre,driveShaper,driveLP,driveWet;
+let nextGrainTime=0,lastNodeVoice=0,lastVoiceBloom=0;
 let prevPulseNorm=0,prevNodeNorm=0,audioPan=0;
+let sampleBuffers={},samplesLoadingPromise=null,samplesReady=false;
+
+// voice sample palette — different "eras" of the-line narration
+// chosen so each mycelium state has its own texture.
+// Longer grain durations at node tier let actual phonemes emerge.
+const SAMPLE_PATHS={
+  tip:   'the-line-v3-daisy-00-cave.ogg',       // ancient, breathy
+  thread:'the-line-v3-daisy-06-telegraph.ogg',  // short pulses
+  branch:'the-line-v3-daisy-04-concrete.ogg',   // spoken, clean
+  node:  'the-line-v3-daisy-14-circuit.ogg',    // denser articulation — voice bloom source
+  pulse: 'the-line-v3-daisy-13-glitch.ogg'      // corrupted
+};
+
+// per-tier grain profile. `durMin/Max` is grain length in seconds;
+// `attack` is the fade-in time (smaller = more click);
+// `releaseRatio` is the fade-out as a fraction of grain length
+// (higher = longer sustain -> phonemes hold together).
+const GRAIN_PROFILES={
+  tip:    {durMin:0.05,durMax:0.16, attack:0.006,releaseRatio:0.42,rateMin:0.76, rateMax:1.44, filter:'bandpass',fMin:800, fMax:2400,q:2.2,vol:0.022},
+  thread: {durMin:0.10,durMax:0.34, attack:0.012,releaseRatio:0.58,rateMin:0.72,rateMax:1.26,filter:'bandpass',fMin:600, fMax:1800,q:1.8,vol:0.028},
+  branch: {durMin:0.28,durMax:0.62, attack:0.024,releaseRatio:0.66,rateMin:0.64,rateMax:1.18,filter:'bandpass',fMin:500, fMax:1400,q:1.4,vol:0.036},
+  // node: long grains, gentle attack, low-pass — words almost coherent
+  node:   {durMin:0.58,durMax:1.22, attack:0.055,releaseRatio:0.54,rateMin:0.78,rateMax:1.12,filter:'lowpass', fMin:1400,fMax:3200,q:0.7,vol:0.044},
+  pulse:  {durMin:0.04,durMax:0.12, attack:0.003,releaseRatio:0.32,rateMin:0.58, rateMax:1.72, filter:'highpass',fMin:900, fMax:2200,q:1.0,vol:0.024}
+};
 
 function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
-
-function buildNoiseBuffer(){
-  const len=actx.sampleRate*2;
-  noiseBuffer=actx.createBuffer(1,len,actx.sampleRate);
-  const data=noiseBuffer.getChannelData(0);
-  let prev=0;
-  for(let i=0;i<len;i++){
-    prev=prev*0.94+(Math.random()*2-1)*0.18;
-    data[i]=prev;
+function makeDriveCurve(amount){
+  const n=2048;
+  const curve=new Float32Array(n);
+  const k=Math.max(2,amount);
+  for(let i=0;i<n;i++){
+    const x=i*2/(n-1)-1;
+    curve[i]=(1+k)*x/(1+k*Math.abs(x));
   }
+  return curve;
+}
+
+async function loadSampleBuffers(){
+  if(samplesLoadingPromise)return samplesLoadingPromise;
+  samplesLoadingPromise=(async()=>{
+    const fallback='the-line-v3-daisy.ogg';
+    const entries=await Promise.all(Object.entries(SAMPLE_PATHS).map(async([key,url])=>{
+      for(const candidate of [url,fallback]){
+        try{
+          const res=await fetch(new URL(candidate,location.href));
+          if(!res.ok)continue;
+          const arr=await res.arrayBuffer();
+          const buf=await actx.decodeAudioData(arr.slice(0));
+          if(buf)return [key,buf];
+        }catch(err){}
+      }
+      return [key,null];
+    }));
+    sampleBuffers=Object.fromEntries(entries.filter(([,buf])=>!!buf));
+    samplesReady=Object.keys(sampleBuffers).length>0;
+  })().catch(()=>{sampleBuffers={};samplesReady=false;});
+  return samplesLoadingPromise;
 }
 
 function initAudio(){
   actx=new (window.AudioContext||window.webkitAudioContext)();
   masterGain=actx.createGain();
-  masterGain.gain.value=0.22;
+  masterGain.gain.value=0.82;
 
   const comp=actx.createDynamicsCompressor();
-  comp.threshold.value=-26;
-  comp.knee.value=18;
-  comp.ratio.value=4;
-  comp.attack.value=0.01;
-  comp.release.value=0.22;
+  comp.threshold.value=-32;
+  comp.knee.value=26;
+  comp.ratio.value=8;
+  comp.attack.value=0.004;
+  comp.release.value=0.15;
 
-  grainBus=actx.createGain();
-  grainBus.gain.value=0.22;
-  nodeBus=actx.createGain();
-  nodeBus.gain.value=0.18;
-  bedGain=actx.createGain();
-  bedGain.gain.value=0.02;
+  // tier buses — each has its own baseline gain so the mix stays balanced
+  tipBus=actx.createGain();    tipBus.gain.value=0.62;
+  threadBus=actx.createGain(); threadBus.gain.value=0.82;
+  branchBus=actx.createGain(); branchBus.gain.value=0.90;
+  nodeBus=actx.createGain();   nodeBus.gain.value=1.04;  // node tier loudest so voice bleeds through
+  pulseBus=actx.createGain();  pulseBus.gain.value=0.76;
 
-  grainBus.connect(masterGain);
-  nodeBus.connect(masterGain);
+  // shared space (delay) send so voice fragments hang
+  delaySend=actx.createGain();   delaySend.gain.value=0.28;
+  spaceDelay=actx.createDelay(1.6);
+  spaceDelay.delayTime.value=0.28;
+  delayFeedback=actx.createGain();delayFeedback.gain.value=0.38;
+  delayFilter=actx.createBiquadFilter();
+  delayFilter.type='lowpass';
+  delayFilter.frequency.value=2200;
+  delayWet=actx.createGain();    delayWet.gain.value=0.26;
+  driveHP=actx.createBiquadFilter();
+  driveHP.type='highpass';
+  driveHP.frequency.value=180;
+  drivePre=actx.createGain();
+  drivePre.gain.value=1.05;
+  driveShaper=actx.createWaveShaper();
+  driveShaper.curve=makeDriveCurve(8);
+  driveShaper.oversample='4x';
+  driveLP=actx.createBiquadFilter();
+  driveLP.type='lowpass';
+  driveLP.frequency.value=4200;
+  driveWet=actx.createGain();
+  driveWet.gain.value=0.015;
+
+  // routing
+  [tipBus,threadBus,branchBus,nodeBus,pulseBus].forEach(b=>{
+    b.connect(masterGain);
+    b.connect(delaySend);
+  });
+  delaySend.connect(spaceDelay);
+  spaceDelay.connect(delayFilter);
+  delayFilter.connect(delayWet);
+  delayFilter.connect(delayFeedback);
+  delayFeedback.connect(spaceDelay);
+  delayWet.connect(masterGain);
   masterGain.connect(comp);
+  masterGain.connect(driveHP);
+  driveHP.connect(drivePre);
+  drivePre.connect(driveShaper);
+  driveShaper.connect(driveLP);
+  driveLP.connect(driveWet);
+  driveWet.connect(comp);
   comp.connect(actx.destination);
-
-  buildNoiseBuffer();
-
-  const bedFilter=actx.createBiquadFilter();
-  bedFilter.type='lowpass';
-  bedFilter.frequency.value=420;
-  bedFilter.Q.value=0.4;
-  bedFilter.connect(bedGain);
-  bedGain.connect(masterGain);
-
-  bedOscA=actx.createOscillator();
-  bedOscA.type='triangle';
-  bedOscA.frequency.value=58;
-  bedOscB=actx.createOscillator();
-  bedOscB.type='sine';
-  bedOscB.frequency.value=91;
-  bedLfo=actx.createOscillator();
-  bedLfo.type='sine';
-  bedLfo.frequency.value=0.07;
-  const lfoGain=actx.createGain();
-  lfoGain.gain.value=8;
-  bedLfo.connect(lfoGain);
-  lfoGain.connect(bedOscB.detune);
-
-  bedOscA.connect(bedGain);
-  bedOscB.connect(bedFilter);
-  bedOscA.start();
-  bedOscB.start();
-  bedLfo.start();
 
   nextGrainTime=actx.currentTime+0.06;
   lastNodeVoice=0;
+  lastVoiceBloom=0;
   audioReady=true;
+  loadSampleBuffers();
 }
 
 function bootAudio(){
@@ -105,99 +164,107 @@ function bootAudio(){
   }
 }
 
-function scheduleNoiseGrain(at,freq,dur,amp,pan){
-  if(!audioReady||!noiseBuffer)return;
+function tierBus(tier){
+  switch(tier){
+    case 'tip':return tipBus;
+    case 'thread':return threadBus;
+    case 'branch':return branchBus;
+    case 'node':return nodeBus;
+    case 'pulse':return pulseBus;
+    default:return threadBus;
+  }
+}
+
+// schedule a single voice grain from the given tier's sample buffer.
+// `override` can tweak dur/attack/releaseRatio/rate/filterFreq/vol for blooms.
+function scheduleVoiceGrain(tier,at,amp,pan,override){
+  if(!audioReady||!samplesReady)return;
+  const buf=sampleBuffers[tier];
+  if(!buf)return;
+  const prof=GRAIN_PROFILES[tier];
+  const o=override||{};
+  const dur=o.dur!=null?o.dur:(prof.durMin+Math.random()*(prof.durMax-prof.durMin));
+  const attack=Math.min(o.attack!=null?o.attack:prof.attack,dur*0.45);
+  const releaseRatio=o.releaseRatio!=null?o.releaseRatio:prof.releaseRatio;
+  const release=Math.max(0.01,dur*releaseRatio);
+  const rate=o.rate!=null?o.rate:(prof.rateMin+Math.random()*(prof.rateMax-prof.rateMin));
+  const fCenter=o.filterFreq!=null?o.filterFreq:(prof.fMin+Math.random()*(prof.fMax-prof.fMin));
+  const vol=(o.volScale!=null?o.volScale:1)*prof.vol;
+
   const src=actx.createBufferSource();
-  src.buffer=noiseBuffer;
-  src.playbackRate.value=clamp(freq/320,0.35,2.4);
+  src.buffer=buf;
+  src.playbackRate.value=rate;
 
   const filter=actx.createBiquadFilter();
-  filter.type='bandpass';
-  filter.frequency.value=freq;
-  filter.Q.value=clamp(3+freq/120,3,12);
+  filter.type=prof.filter;
+  filter.frequency.value=fCenter;
+  filter.Q.value=prof.q;
 
   const gain=actx.createGain();
-  gain.gain.setValueAtTime(0,at);
-  gain.gain.linearRampToValueAtTime(amp,at+Math.min(0.018,dur*0.35));
-  gain.gain.exponentialRampToValueAtTime(0.0001,at+dur);
+  const sustainStart=at+attack;
+  const end=at+dur;
+  const releaseStart=Math.max(sustainStart,end-release);
+  gain.gain.setValueAtTime(0.0001,at);
+  gain.gain.linearRampToValueAtTime(amp*vol,sustainStart);
+  if(releaseStart>sustainStart)gain.gain.setValueAtTime(amp*vol,releaseStart);
+  gain.gain.exponentialRampToValueAtTime(0.0001,end);
 
   src.connect(filter);
   filter.connect(gain);
 
+  const bus=tierBus(tier);
   if(actx.createStereoPanner){
     const p=actx.createStereoPanner();
-    p.pan.value=pan;
+    p.pan.value=clamp(pan,-1,1);
     gain.connect(p);
-    p.connect(grainBus);
+    p.connect(bus);
   }else{
-    gain.connect(grainBus);
+    gain.connect(bus);
   }
 
-  const maxOffset=Math.max(0,noiseBuffer.duration-dur-0.01);
-  src.start(at,Math.random()*maxOffset,dur);
-  src.stop(at+dur+0.02);
+  // pick grain offset inside the sample — bias by time so palette drifts
+  const playDur=dur*rate;
+  const maxOffset=Math.max(0,buf.duration-playDur-0.02);
+  const drift=(t*0.023)%1;
+  const offsetSpread=o.offsetSpread!=null?o.offsetSpread:0.7;
+  const offset=(drift+Math.random()*offsetSpread)%1*maxOffset;
+  src.start(at,offset,dur+0.02);
+  src.stop(end+0.05);
 }
 
-function scheduleNodeBloom(at,freq,amp,pan){
-  if(!audioReady)return;
-  const osc=actx.createOscillator();
-  osc.type='triangle';
-  osc.frequency.value=freq;
-  const sub=actx.createOscillator();
-  sub.type='sine';
-  sub.frequency.value=freq*0.5;
-
-  const filter=actx.createBiquadFilter();
-  filter.type='lowpass';
-  filter.frequency.value=freq*3.4;
-  filter.Q.value=0.7;
-
-  const gain=actx.createGain();
-  gain.gain.setValueAtTime(0.0001,at);
-  gain.gain.linearRampToValueAtTime(amp,at+0.04);
-  gain.gain.exponentialRampToValueAtTime(0.0001,at+0.42);
-
-  osc.connect(filter);
-  sub.connect(filter);
-  filter.connect(gain);
-
-  if(actx.createStereoPanner){
-    const p=actx.createStereoPanner();
-    p.pan.value=pan;
-    gain.connect(p);
-    p.connect(nodeBus);
-  }else{
-    gain.connect(nodeBus);
-  }
-
-  osc.start(at);
-  sub.start(at);
-  osc.stop(at+0.48);
-  sub.stop(at+0.48);
+// longer grain at dense nodes — where voice fragments can emerge
+function scheduleVoiceBloom(at,amp,pan){
+  if(!audioReady||!samplesReady||!sampleBuffers.node)return;
+  const dur=0.82+Math.random()*0.4;
+  scheduleVoiceGrain('node',at,amp,pan,{
+    dur,
+    attack:0.08,
+    releaseRatio:0.6,
+    rate:0.92+Math.random()*0.1,
+    filterFreq:1600+Math.random()*1400,
+    volScale:1.3
+  });
 }
 
 function triggerSporeBurst(sx,sy){
   if(!audioReady)return;
-  const now=actx.currentTime+0.01;
+  const now=actx.currentTime+0.02;
   const pan=clamp(sx*2-1,-0.9,0.9);
-  const base=170+sy*230+Math.random()*70;
   for(let i=0;i<3;i++){
-    scheduleNoiseGrain(now+i*0.024,base+i*55,0.08+i*0.015,0.026-i*0.005,pan+(Math.random()-0.5)*0.35);
+    scheduleVoiceGrain('tip',now+i*0.028,0.9-i*0.12,pan+(Math.random()-0.5)*0.3);
   }
-  scheduleNodeBloom(now+0.02,base*0.66,0.028,pan*0.7);
+  scheduleVoiceGrain('branch',now+0.04,0.8,pan*0.7);
+  if(Math.random()<0.45)scheduleVoiceBloom(now+0.08,0.7,pan*0.5);
 }
 
 function triggerPulseCrackle(strength,pan,cy){
   if(!audioReady)return;
   const now=actx.currentTime+0.01;
   const count=3+Math.floor(strength*6);
-  const base=210+(1-cy)*240+strength*140;
   for(let i=0;i<count;i++){
-    const at=now+i*(0.008+Math.random()*0.014);
-    const freq=base+Math.random()*260+(i%2)*70;
-    const dur=0.022+Math.random()*0.04;
-    const amp=0.01+strength*0.016-Math.min(i*0.0012,0.006);
-    scheduleNoiseGrain(at,freq,dur,amp,clamp(pan+(Math.random()-0.5)*0.55,-1,1));
+    const at=now+i*(0.009+Math.random()*0.016);
+    const amp=0.7+strength*0.5-Math.min(i*0.05,0.35);
+    scheduleVoiceGrain('pulse',at,amp,clamp(pan+(Math.random()-0.5)*0.6,-1,1));
   }
 }
 
@@ -216,37 +283,109 @@ function updateAudio(stats){
   const activity=clamp(growth*0.28+tips*0.2+nodes*0.14+pulses*0.2+branchiness*0.18,0,1);
   const pulseRise=Math.max(0,pulses-prevPulseNorm);
   const nodeRise=Math.max(0,nodes-prevNodeNorm);
-  audioPan+=(centerX*2-1-audioPan)*0.14;
+  const mousePan=clamp(mx*2-1,-1,1);
+  const driveCorner=Math.pow(clamp(mx*(1-my),0,1),1.4);
+  const sparseCorner=Math.pow(clamp((1-mx)*my,0,1),1.35);
+  const shortCorner=Math.pow(clamp((1-mx)*(1-my),0,1),1.35);
+  const highCorner=Math.pow(clamp(mx*my,0,1),1.35);
+  const stereoWidth=0.16+Math.abs(mousePan)*0.9;
+  const grainStretch=Math.max(0.18,0.38+my*2.25-shortCorner*1.3);
+  const grainScatter=0.06+(1-my)*0.58+activity*0.12;
+  const rateTilt=(1.42-my*0.74)*(1+highCorner*0.16);
+  audioPan+=(((centerX*2-1)*0.45+mousePan*0.55)-audioPan)*0.18;
 
-  bedGain.gain.setTargetAtTime(0.005+growth*0.012+nodes*0.018,now,0.35);
-  grainBus.gain.setTargetAtTime(0.14+activity*0.28+pulses*0.12+freshness*0.08,now,0.12);
-  nodeBus.gain.setTargetAtTime(0.08+nodes*0.18+branchiness*0.05,now,0.2);
-  masterGain.gain.setTargetAtTime(0.17+growth*0.06+nodes*0.06+pulses*0.04,now,0.22);
+  // tier-bus levels track state so voice bleeds in/out with the colony
+  tipBus.gain.setTargetAtTime(0.24+tips*0.58+freshness*0.32,now,0.14);
+  threadBus.gain.setTargetAtTime(0.30+growth*0.62+activity*0.24,now,0.16);
+  branchBus.gain.setTargetAtTime(0.24+branchiness*0.72+my*0.14,now,0.16);
+  nodeBus.gain.setTargetAtTime(0.18+nodes*0.92+pulses*0.18+my*0.18,now,0.18);
+  pulseBus.gain.setTargetAtTime(0.12+pulses*0.74+(1-my)*0.12,now,0.1);
+  masterGain.gain.setTargetAtTime(0.54+growth*0.16+nodes*0.12+pulses*0.08+my*0.1,now,0.18);
+  drivePre.gain.setTargetAtTime(1.02+driveCorner*3.4,now,0.12);
+  driveLP.frequency.setTargetAtTime(5000-driveCorner*1800,now,0.12);
+  driveWet.gain.setTargetAtTime(0.012+driveCorner*0.2,now,0.1);
+  driveShaper.curve=makeDriveCurve(8+driveCorner*34);
 
-  bedOscA.frequency.setTargetAtTime(46+(1-centerY)*18+growth*22+nodes*12,now,0.28);
-  bedOscB.frequency.setTargetAtTime(78+(1-centerY)*34+growth*48+pulses*24,now,0.22);
+  // dispatch grains in clusters per tick — each tier fires if its metric crosses a threshold
+  if(now>=nextGrainTime&&samplesReady){
+    const pan=audioPan;
 
-  if(now>=nextGrainTime){
-    const grains=2+Math.floor(activity*2)+Math.floor(pulses*2)+(Math.random()<branchiness*0.7?1:0);
-    for(let i=0;i<grains;i++){
-      const spread=(Math.random()-0.5)*(0.3+branchiness*0.9);
-      const freq=120+(1-centerY)*160+growth*110+nodes*170+pulses*180+freshness*120+Math.random()*150;
-      const dur=0.018+tips*0.026+branchiness*0.016+Math.random()*0.016;
-      const amp=0.008+activity*0.012+pulses*0.006+freshness*0.006;
-      scheduleNoiseGrain(now+i*(0.006+Math.random()*0.01),freq,dur,amp,clamp(audioPan+spread,-1,1));
+    // TIP: short clicky fragments — fire often when there are fresh growing tips
+    if(tips>0.06||freshness>0.1){
+      const n=Math.max(1,Math.floor((1+Math.floor(tips*3+freshness*2+Math.random()*1.5))*(1-sparseCorner*0.72)));
+      for(let i=0;i<n;i++){
+        const dur=(GRAIN_PROFILES.tip.durMin+Math.random()*(GRAIN_PROFILES.tip.durMax-GRAIN_PROFILES.tip.durMin))*(0.45+grainStretch*0.62);
+        scheduleVoiceGrain('tip',now+i*(0.008+Math.random()*0.014),0.86+tips*0.62,clamp(pan+(Math.random()-0.5)*stereoWidth*1.08,-1,1),{
+          dur,
+          rate:(GRAIN_PROFILES.tip.rateMin+Math.random()*(GRAIN_PROFILES.tip.rateMax-GRAIN_PROFILES.tip.rateMin))*rateTilt,
+          offsetSpread:grainScatter,
+          volScale:1.25
+        });
+      }
     }
-    nextGrainTime=now+clamp(0.19-activity*0.085-pulses*0.05-branchiness*0.04,0.035,0.19);
-  }
 
-  if((nodes>0.1||pulses>0.18)&&now-lastNodeVoice>0.28-nodes*0.1){
-    if(Math.random()<0.1+nodes*0.2+pulses*0.16+nodeRise*1.8){
-      scheduleNodeBloom(now+0.01,98+(1-centerY)*52+nodes*120+Math.random()*60,0.018+nodes*0.036+pulses*0.014,clamp(audioPan*0.7+(Math.random()-0.5)*0.35,-0.8,0.8));
-      lastNodeVoice=now;
+    // THREAD: the backbone texture — moderate rate, always some
+    const threadN=Math.max(1,Math.floor((1+Math.floor(growth*3+activity*1.5))*(1-sparseCorner*0.76)));
+    for(let i=0;i<threadN;i++){
+      const dur=(GRAIN_PROFILES.thread.durMin+Math.random()*(GRAIN_PROFILES.thread.durMax-GRAIN_PROFILES.thread.durMin))*(0.54+grainStretch*0.72);
+      scheduleVoiceGrain('thread',now+i*(0.02+Math.random()*0.026),0.8+growth*0.62,clamp(pan+(Math.random()-0.5)*(0.42+stereoWidth*0.75),-1,1),{
+          dur,
+          rate:(GRAIN_PROFILES.thread.rateMin+Math.random()*(GRAIN_PROFILES.thread.rateMax-GRAIN_PROFILES.thread.rateMin))*rateTilt,
+          offsetSpread:grainScatter*1.18,
+          volScale:1.22
+      });
     }
+
+    // BRANCH: spoken, longer — fire when branchiness is high
+    if(branchiness>0.12&&Math.random()<0.4+branchiness*0.6){
+      const n=Math.max(1,Math.floor((1+Math.floor(branchiness*2))*(1-sparseCorner*0.78)));
+      for(let i=0;i<n;i++){
+        const dur=(GRAIN_PROFILES.branch.durMin+Math.random()*(GRAIN_PROFILES.branch.durMax-GRAIN_PROFILES.branch.durMin))*(0.72+grainStretch*0.88);
+        scheduleVoiceGrain('branch',now+i*(0.05+Math.random()*0.034),0.84+branchiness*0.5,clamp(pan*0.65+(Math.random()-0.5)*(0.34+stereoWidth*0.62),-1,1),{
+          dur,
+          rate:(GRAIN_PROFILES.branch.rateMin+Math.random()*(GRAIN_PROFILES.branch.rateMax-GRAIN_PROFILES.branch.rateMin))*(1.24-my*0.42),
+          offsetSpread:grainScatter*1.28,
+          volScale:1.28
+        });
+      }
+    }
+
+    // NODE: long grains — THE voice tier. Throttle so long grains don't mush.
+    if(nodes>0.08&&now-lastNodeVoice>(0.55-nodes*0.2)){
+      if(Math.random()<0.35+nodes*0.5+nodeRise*1.4){
+        const dur=(GRAIN_PROFILES.node.durMin+Math.random()*(GRAIN_PROFILES.node.durMax-GRAIN_PROFILES.node.durMin))*(0.82+grainStretch*1.08);
+        scheduleVoiceGrain('node',now+0.018,0.92+nodes*0.58,clamp(pan*0.55+(Math.random()-0.5)*(0.28+stereoWidth*0.52),-0.95,0.95),{
+          dur,
+          rate:(0.82+Math.random()*0.2)*(1.18-my*0.26),
+          offsetSpread:grainScatter*1.52,
+          volScale:1.34
+        });
+        lastNodeVoice=now;
+      }
+    }
+
+    // VOICE BLOOM: rare, long, gentle — where a word could almost emerge
+    if(nodes>0.18&&now-lastVoiceBloom>1.8-nodes*0.6){
+      if(Math.random()<0.25+nodes*0.4+pulses*0.3){
+        scheduleVoiceGrain('node',now+0.05,0.65+nodes*0.4,clamp(pan*0.45+(Math.random()-0.5)*(0.22+stereoWidth*0.22),-0.75,0.75),{
+          dur:(0.92+Math.random()*0.54)*(0.96+grainStretch*1.18),
+          attack:0.08,
+          releaseRatio:0.68,
+          rate:(0.8+Math.random()*0.18)*(1.12-my*0.22),
+          filterFreq:1600+Math.random()*1400,
+          volScale:1.52,
+          offsetSpread:grainScatter*1.72
+        });
+        lastVoiceBloom=now;
+      }
+    }
+
+    nextGrainTime=now+clamp(0.2-activity*0.09-pulses*0.05-branchiness*0.04-(1-my)*0.06+sparseCorner*0.08,0.035,0.28);
   }
 
   if(pulseRise>0.025||nodeRise>0.018){
-    triggerPulseCrackle(clamp(pulseRise*5+nodeRise*6+pulses*0.4,0.18,1),audioPan,centerY);
+    const cracklePan=clamp(audioPan+(Math.random()-0.5)*(0.4+stereoWidth*0.45),-1,1);
+    triggerPulseCrackle(clamp(pulseRise*5+nodeRise*6+pulses*0.4,0.18,1),cracklePan,centerY);
   }
 
   prevPulseNorm+=(pulses-prevPulseNorm)*0.3;
@@ -280,19 +419,19 @@ function resize(){
   ctx.textBaseline='top';
   hyphae=[];
   // initial spores
-  for(let i=0;i<12;i++) spawnSpore(Math.random(),Math.random());
+  for(let i=0;i<7;i++) spawnSpore(Math.random(),Math.random());
 }
 
 function spawnSpore(sx,sy){
-  const count=3+Math.floor(Math.random()*5);
+  const count=2+Math.floor(Math.random()*4);
   for(let i=0;i<count;i++){
     hyphae.push({
       x:sx*cols,
       y:sy*rows,
       angle:Math.random()*Math.PI*2,
-      energy:120+Math.random()*200,
-      speed:0.3+Math.random()*0.4,
-      branchProb:0.008+Math.random()*0.012,
+      energy:95+Math.random()*150,
+      speed:0.22+Math.random()*0.28,
+      branchProb:0.005+Math.random()*0.008,
       age:0,
       gen:0
     });
@@ -307,9 +446,19 @@ function spawnSpore(sx,sy){
 }
 
 function frame(){
+  if(!started){
+    ctx.fillStyle='#06050a';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='rgba(180,240,200,0.78)';
+    ctx.fillText('click to germinate',Math.max(18,W*0.5-84),Math.max(18,H*0.5-8));
+    requestAnimationFrame(frame);
+    return;
+  }
+
   t+=0.02;
   const cw=CELL*0.58;
   const mxg=mx*cols,myg=my*rows;
+  const growthRamp=clamp(t/18,0.28,1);
 
   // GROW HYPHAE
   const newHyphae=[];
@@ -317,7 +466,7 @@ function frame(){
     const hy=hyphae[h];
     if(hy.energy<=0)continue;
     hy.age++;
-    hy.energy-=0.4;
+    hy.energy-=0.26+growthRamp*0.18;
 
     // chemotaxis: bend toward mouse
     const dx=mxg-hy.x,dy=myg-hy.y;
@@ -327,12 +476,12 @@ function frame(){
       let diff=targetAngle-hy.angle;
       while(diff>Math.PI)diff-=2*Math.PI;
       while(diff<-Math.PI)diff+=2*Math.PI;
-      const attraction=Math.min(0.08,2/dist);
+      const attraction=Math.min(0.03+growthRamp*0.05,2/dist);
       hy.angle+=diff*attraction;
     }
 
     // random wander
-    hy.angle+=( Math.random()-0.5)*0.6;
+    hy.angle+=( Math.random()-0.5)*(0.3+growthRamp*0.3);
 
     // avoid edges gently
     if(hy.x<3)hy.angle+= 0.1;
@@ -352,8 +501,9 @@ function frame(){
     }
 
     // move
-    hy.x+=Math.cos(hy.angle)*hy.speed;
-    hy.y+=Math.sin(hy.angle)*hy.speed;
+    const travel=hy.speed*(0.45+growthRamp*0.55);
+    hy.x+=Math.cos(hy.angle)*travel;
+    hy.y+=Math.sin(hy.angle)*travel;
 
     const gc=Math.floor(hy.x),gr=Math.floor(hy.y);
     if(gc<0||gc>=cols||gr<0||gr>=rows){hy.energy=0;continue;}
@@ -381,9 +531,9 @@ function frame(){
           newHyphae.push({
             x:hy.x,y:hy.y,
             angle:hy.angle+Math.PI/2*(b===0?1:-1)+Math.random()*0.5,
-            energy:60+Math.random()*60,
-            speed:0.25+Math.random()*0.3,
-            branchProb:0.006,age:0,gen:hy.gen+1
+            energy:(40+Math.random()*50)*(0.65+growthRamp*0.35),
+            speed:(0.18+Math.random()*0.22)*(0.55+growthRamp*0.45),
+            branchProb:0.0035+growthRamp*0.0025,age:0,gen:hy.gen+1
           });
         }
       }
@@ -391,7 +541,7 @@ function frame(){
     }
 
     // branching
-    if(Math.random()<hy.branchProb&&hy.energy>30&&hyphae.length+newHyphae.length<2000&&hy.gen<8){
+    if(Math.random()<hy.branchProb*(0.35+growthRamp*0.65)&&hy.energy>30&&hyphae.length+newHyphae.length<2000&&hy.gen<8){
       const side=Math.random()<0.5?1:-1;
       newHyphae.push({
         x:hy.x,y:hy.y,
@@ -409,11 +559,11 @@ function frame(){
   hyphae=newHyphae;
 
   // respawn if population drops
-  if(hyphae.length<50&&Math.random()<0.05){
+  if(hyphae.length<50&&Math.random()<0.02+growthRamp*0.03){
     spawnSpore(Math.random(),Math.random());
   }
   // spawn near mouse occasionally  
-  if(Math.random()<0.01){
+  if(Math.random()<0.002+growthRamp*0.008){
     spawnSpore(mx+Math.random()*0.05-0.025,my+Math.random()*0.05-0.025);
   }
 
@@ -550,9 +700,9 @@ function frame(){
 
 document.addEventListener('mousemove',e=>{mx=e.clientX/W;my=e.clientY/H});
 document.addEventListener('touchmove',e=>{e.preventDefault();mx=e.touches[0].clientX/W;my=e.touches[0].clientY/H},{passive:false});
-document.addEventListener('pointerdown',bootAudio);
-document.addEventListener('keydown',bootAudio);
-document.addEventListener('touchstart',bootAudio,{passive:true});
+document.addEventListener('pointerdown',()=>{started=true;bootAudio();});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){started=true;bootAudio();}});
+document.addEventListener('touchstart',()=>{started=true;bootAudio();},{passive:true});
 
 // click: drop a cluster of spores
 document.addEventListener('click',e=>{
