@@ -3,354 +3,150 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Character Glitch</title>
-<meta name="description" content="Character-only browser experiments: vortex fields, attractors, mycelium, physarum, fractals, character sorting, a Fibonacci cube, The Line, Hex Heart, and a dummy OS.">
+<title>character glitch</title>
+<meta name="description" content="Character-only browser experiments.">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Character Glitch">
-<meta property="og:description" content="Character-only browser experiments: vortex fields, attractors, mycelium, physarum, fractals, character sorting, a Fibonacci cube, The Line, Hex Heart, and a dummy OS.">
+<meta property="og:title" content="character glitch">
+<meta property="og:description" content="Character-only browser experiments.">
 <meta property="og:url" content="https://willbearfruits.github.io/characterglitch/">
 <meta property="og:image" content="https://willbearfruits.github.io/characterglitch/social-preview.png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Character Glitch social preview with gold glyph field on a dark background.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Character Glitch">
-<meta name="twitter:description" content="Character-only browser experiments: vortex fields, attractors, mycelium, physarum, fractals, character sorting, a Fibonacci cube, The Line, Hex Heart, and a dummy OS.">
+<meta name="twitter:title" content="character glitch">
+<meta name="twitter:description" content="Character-only browser experiments.">
 <meta name="twitter:image" content="https://willbearfruits.github.io/characterglitch/social-preview.png">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --bg:#040503;
-  --ink:#adc69a;
-  --soft:#65765d;
-  --hot:#d7bc79;
-  --line:rgba(173,198,154,0.16);
-}
+*{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%}
-body{
-  background:var(--bg);
-  color:var(--ink);
-  font:15px/1.55 "Courier New", Courier, monospace;
-  overflow:auto;
-  cursor:none;
-}
-canvas{
-  position:fixed;
-  inset:0;
-  display:block;
-  opacity:.42;
-}
-main{
-  position:relative;
-  z-index:2;
-  width:min(700px,calc(100vw - 24px));
-  margin:22px auto 40px;
-}
-h1{
-  font-size:15px;
-  font-weight:normal;
-  letter-spacing:.08em;
-  text-transform:lowercase;
-}
-p{
-  max-width:60ch;
-  color:var(--soft);
-  margin-top:8px;
-}
-.list{
-  margin-top:18px;
-  border-top:1px solid var(--line);
-}
-.item{
-  display:block;
-  color:var(--ink);
-  text-decoration:none;
-  border-bottom:1px solid var(--line);
-  padding:8px 0 9px;
-  white-space:pre-wrap;
-}
-.item:hover,.item:focus-visible,.item.active{
-  color:#e3f3c2;
-  outline:none;
-}
-.meta{
-  margin-top:18px;
-  display:grid;
-  gap:10px;
-}
-.label{
-  color:var(--hot);
-  font-size:13px;
-}
-.value{
-  white-space:pre-wrap;
-}
+body{background:#040503;overflow:hidden;cursor:none}
+canvas{position:fixed;inset:0;display:block;z-index:0}
 .cursor{
-  position:fixed;
-  left:0;
-  top:0;
-  z-index:4;
-  pointer-events:none;
-  color:rgba(227,243,194,0.72);
-  transform:translate(-50%,-50%);
+  position:fixed;left:0;top:0;z-index:5;pointer-events:none;
+  font:20px/1 "Courier New", Courier, monospace;
+  color:rgba(227,243,194,0.9);
+  text-shadow:0 0 8px rgba(227,243,194,0.4);
+  will-change:transform;
+  transform:translate3d(-100px,-100px,0) translate(-50%,-50%);
 }
-@media (max-width:860px){
+.cursor.hot{color:#ffe89a;text-shadow:0 0 10px rgba(255,220,120,0.6)}
+.veil{
+  position:fixed;inset:0;z-index:4;pointer-events:none;
+  background:#040503;opacity:0;transition:opacity .55s ease-in;
+}
+.veil.on{opacity:1}
+@media (max-width:720px){
   body{cursor:auto}
-  main{width:calc(100vw - 20px);margin:14px auto 24px}
   .cursor{display:none}
-  canvas{opacity:.32}
 }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-
-<main>
-  <h1>character glitch / index</h1>
-  <p>Ten pieces worth surfacing. Bare index, direct links, no wrapper logic beyond selection and routing.</p>
-
-  <nav id="experiments" class="list" aria-label="Experiments"></nav>
-
-  <section class="meta">
-    <div>
-      <div class="label">signal</div>
-      <div id="glyph" class="value"></div>
-    </div>
-    <div>
-      <div class="label">selected</div>
-      <div id="title" class="value"></div>
-    </div>
-    <div>
-      <div class="label">behavior</div>
-      <div id="description" class="value"></div>
-    </div>
-    <div>
-      <div class="label">input</div>
-      <div id="controls" class="value"></div>
-    </div>
-    <div>
-      <div class="label">keys</div>
-      <div class="value">01..10 jump
-↑ ↓ move
-enter open</div>
-    </div>
-  </section>
-</main>
-
-<div id="cursor" class="cursor">⌖</div>
-
+<div class="cursor" id="cursor">⌖</div>
+<div class="veil" id="veil"></div>
 <script>
 const experiments=[
-  {
-    title:'zalgo vortex',
-    file:'zalgo_vortex.html',
-    code:'01',
-    glyph:'◌̸ ╱╲ ◌̴',
-    strap:'orbiting fields / spawned vortices',
-    description:'Energy wells orbit inside a character grid. Mouse motion bends brightness. Click adds another vortex.',
-    controls:'mousemove, touchmove, click'
-  },
-  {
-    title:'de jong organism',
-    file:'dejong_organism.html',
-    code:'02',
-    glyph:'◍◌✦◌◍',
-    strap:'strange attractor / trail body',
-    description:'A de Jong attractor is iterated at high density each frame, accumulating a living cloud of marks.',
-    controls:'mousemove, touchmove, click'
-  },
-  {
-    title:'mycelium network',
-    file:'mycelium_network.html',
-    code:'03',
-    glyph:'┼╱╲◆╱╲┼',
-    strap:'branching hyphae / fusion nodes',
-    description:'Agents branch, fuse, and die into nodes while following and reinforcing fungal trails.',
-    controls:'mousemove, touchmove, click'
-  },
-  {
-    title:'physarum zalgo',
-    file:'physarum_zalgo.html',
-    code:'04',
-    glyph:'∙╲╳╱∙̴',
-    strap:'slime mold swarm / pheromone field',
-    description:'Thousands of agents sense, turn, and deposit pheromone, producing dense woven glyph tissue.',
-    controls:'mousemove, touchmove, click, wheel'
-  },
-  {
-    title:'fractal',
-    file:'fractal.html',
-    code:'05',
-    glyph:'█⇵∎⇵█',
-    strap:'burning ship / tears / shockwave',
-    description:'A hard-edged fractal chamber with lens distortion, glitch tear lines, and click shockwaves.',
-    controls:'mousemove, touchmove, click, wheel'
-  },
-  {
-    title:'charsort',
-    file:'charsort.html',
-    code:'06',
-    glyph:'▒▒≋≋▒▒',
-    strap:'character sort / threshold spans / streak field',
-    description:'A procedural brightness field gets pixel-sorted as characters. Mouse position shifts thresholds and sort direction; clicks inject local disturbances.',
-    controls:'mousemove, touchmove, click'
-  },
-  {
-    title:'fibonacci cube',
-    file:'fibonacci_sphere.html',
-    code:'07',
-    glyph:'◌✦◌□◌✧',
-    strap:'golden-angle cube / 3d projection / pulse lattice',
-    description:'A Fibonacci cube rotates as a projected glyph body. Depth chooses characters, threads connect the shell, and clicks send heavy shock rings through the lattice.',
-    controls:'mousemove, touchmove, click, wheel'
-  },
-  {
-    title:'the line',
-    file:'the-line-v3.html',
-    code:'08',
-    glyph:'│◆█◆│',
-    strap:'timeline / media history / daisy narration',
-    description:'A character-only line of media history: cave wall to live code, with plain-language notes, external links, and segmented Daisy narration.',
-    controls:'mousemove, touchmove, click, wheel, ← →, home, end'
-  },
-  {
-    title:'my heart is a hexadecimal code waiting to be corrupted',
-    file:'my-heart-is-a-hexadecimal-code-waiting-to-be-corrupted.html',
-    code:'09',
-    glyph:'0x❤0x',
-    strap:'corrupt heart / staged pulse / tissue failure',
-    description:'A hexadecimal heart that degrades over time: layered lub-dub audio, corruption stages, escaping fragments, and a body that slowly loses trust in itself.',
-    controls:'mousemove, touchmove, click, wheel'
-  },
-  {
-    title:'dummy os',
-    file:'dummy_os.html',
-    code:'10',
-    glyph:'╔╪╬⌁╬╪╗',
-    strap:'false desktop / infected processes / fractal core',
-    description:'A fake operating system screen in the repo’s glyph language: corrupted processes, hex memory, a console, a network field, and a character fractal core.',
-    controls:'mousemove, touchmove, click, tab, enter, space, typing'
-  }
+  {title:'zalgo vortex',        file:'zalgo_vortex.html'},
+  {title:'de jong organism',    file:'dejong_organism.html'},
+  {title:'mycelium network',    file:'mycelium_network.html'},
+  {title:'physarum zalgo',      file:'physarum_zalgo.html'},
+  {title:'physarum grainfield', file:'physarum_zalgo_grainfield.html'},
+  {title:'fractal',             file:'fractal.html'},
+  {title:'charsort',            file:'charsort.html'},
+  {title:'reaction diffusion',  file:'reaction_diffusion.html'},
+  {title:'fibonacci cube',      file:'fibonacci_sphere.html'},
+  {title:'the line',            file:'the-line-v4.html'},
+  {title:'hex heart',           file:'my-heart-is-a-hexadecimal-code-waiting-to-be-corrupted.html'},
+  {title:'dummy os',            file:'dummy_os.html'},
 ];
 
-const nav=document.getElementById('experiments');
-const glyphEl=document.getElementById('glyph');
-const titleEl=document.getElementById('title');
-const descriptionEl=document.getElementById('description');
-const controlsEl=document.getElementById('controls');
-const cursor=document.getElementById('cursor');
-
-let current=0;
-
-function formatLine(exp,isActive){
-  const mark=isActive?'>':' ';
-  return `${mark}${exp.code}  ${exp.title}\n  ${exp.strap}`;
-}
-
-function glitchLine(seed){
-  const above=['\u0300','\u0301','\u0302','\u0303','\u0307','\u0308','\u030A','\u030C'];
-  const below=['\u0323','\u0324','\u0325','\u0330','\u0331','\u0332'];
-  const pool='.-=:/\\\\|'.split('');
-  let out='';
-  for(let i=0;i<seed.length+7;i++){
-    let ch=pool[(i*2+seed.length)%pool.length];
-    if(i%3===0)ch+=above[(i+seed.length)%above.length];
-    if(i%5===0)ch+=below[(i*2+seed.length)%below.length];
-    out+=ch;
-  }
-  return out;
-}
-
-function renderList(){
-  nav.innerHTML=experiments.map((exp,i)=>`<a class="item${i===current?' active':''}" href="${exp.href||exp.file}" data-index="${i}">${formatLine(exp,i===current)}</a>`).join('');
-  nav.querySelectorAll('.item').forEach(link=>{
-    link.addEventListener('mouseenter',()=>setCurrent(Number(link.dataset.index)));
-    link.addEventListener('focus',()=>setCurrent(Number(link.dataset.index)));
-  });
-}
-
-function setCurrent(index){
-  current=(index+experiments.length)%experiments.length;
-  const exp=experiments[current];
-  nav.querySelectorAll('.item').forEach((link,i)=>{
-    link.classList.toggle('active',i===current);
-    link.textContent=formatLine(experiments[i],i===current);
-  });
-  glyphEl.textContent=`${exp.glyph}\n${glitchLine(exp.title)}`;
-  titleEl.textContent=`${exp.code} ${exp.title}\n${exp.file}`;
-  descriptionEl.textContent=exp.description;
-  controlsEl.textContent=exp.controls;
-}
-
-renderList();
-setCurrent(0);
-
-document.addEventListener('keydown',e=>{
-  if(e.key==='ArrowDown' || e.key==='j'){
-    e.preventDefault();
-    setCurrent(current+1);
-  }else if(e.key==='ArrowUp' || e.key==='k'){
-    e.preventDefault();
-    setCurrent(current-1);
-  }else if(/^[1-9]$/.test(e.key)){
-    setCurrent(Number(e.key)-1);
-  }else if(e.key==='Enter'){
-    window.location.href=experiments[current].href||experiments[current].file;
-  }
-});
-
-document.addEventListener('mousemove',e=>{
-  cursor.style.left=e.clientX+'px';
-  cursor.style.top=e.clientY+'px';
-});
+const ABOVE=['\u0300','\u0301','\u0302','\u0303','\u0307','\u0308','\u030A','\u030C','\u0311'];
+const BELOW=['\u0323','\u0324','\u0325','\u0330','\u0331','\u0332','\u0347'];
+const STRIKE=['\u0334','\u0335','\u0336'];
+const DUST=['\u00B7','\u2027','\u2219','.','\u2024'];
+const THREAD=['\u2500','\u2502','\u2571','\u2572','\u2573','\u254E','\u254F'];
+const WEAVE=['\u2591','\u2592','\u2593','\u25A0','\u25C6'];
+const NODE=['\u2740','\u273B','\u2735','\u2726','\u2728'];
 
 const cv=document.getElementById('c');
 const ctx=cv.getContext('2d');
-const CELL=16;
-let W,H,cols,rows,t=0,mx=0.5,my=0.5,pmx=0.5,pmy=0.5,field;
-const DUST='·∶⋅.'.split('');
-const THREAD='─│╱╲╳'.split('');
-const WEAVE='░▒▓■◆'.split('');
-const NODE='✦✧✶'.split('');
-const ABOVE=['\u0300','\u0301','\u0302','\u0303','\u0307','\u0308','\u030A'];
-const BELOW=['\u0323','\u0324','\u0325','\u0330','\u0331'];
+const cursor=document.getElementById('cursor');
+const veil=document.getElementById('veil');
+
+const CELL=18;
+const CW=CELL*0.58;
+const CH=CELL*1.04;
+let W,H,cols,rows,field;
+let t=0,mx=0.5,my=0.5,pmx=0.5,pmy=0.5;
+let clientX=-100,clientY=-100;
 let wells=[];
+let current=-1;
+let diving=false,diveBoost=0;
+let tears=[];
+let rowShift=null;
+let hueFlash=0;
+let chromFlash=0;
+let nameFlicker=0;
+
+function srand(n){const x=Math.sin(n*12.9898)*43758.5453;return x-Math.floor(x);}
+
+function layoutNames(){
+  const maxLen=Math.max(...experiments.map(e=>e.title.length));
+  let nCols=4;
+  if(cols<maxLen*nCols*1.4)nCols=3;
+  if(cols<maxLen*nCols*1.4)nCols=2;
+  if(cols<maxLen*nCols*1.4)nCols=1;
+  const nRows=Math.ceil(experiments.length/nCols);
+  experiments.forEach((exp,i)=>{
+    const zc=i%nCols;
+    const zr=Math.floor(i/nCols);
+    const zoneW=cols/nCols;
+    const zoneH=rows/nRows;
+    const jc=(srand(i*7.13+1)-0.5)*zoneW*0.28;
+    const jr=(srand(i*13.57+5)-0.5)*zoneH*0.32;
+    const cx=(zc+0.5)*zoneW+jc;
+    const cy=(zr+0.5)*zoneH+jr;
+    exp.col=Math.max(1,Math.min(cols-exp.title.length-1,Math.round(cx-exp.title.length/2)));
+    exp.row=Math.max(1,Math.min(rows-2,Math.round(cy)));
+    exp.width=exp.title.length;
+  });
+}
 
 function resize(){
   W=window.innerWidth;
   H=window.innerHeight;
   cv.width=W;
   cv.height=H;
-  cols=Math.floor(W/(CELL*0.58));
-  rows=Math.floor(H/(CELL*1.04));
+  cols=Math.floor(W/CW);
+  rows=Math.floor(H/CH);
   field=new Float32Array(cols*rows);
-  ctx.font=CELL+'px Courier New';
+  rowShift=new Int16Array(rows);
+  ctx.font=CELL+'px "Courier New", monospace';
   ctx.textBaseline='top';
-  wells=[
-    {x:0.24,y:0.28,vx:0.0010,vy:0.0004,s:1.0},
-    {x:0.72,y:0.36,vx:-0.0008,vy:0.0009,s:0.88},
-    {x:0.46,y:0.74,vx:0.0006,vy:-0.0006,s:0.78}
-  ];
+  if(!wells.length){
+    wells=[
+      {x:0.22,y:0.30,vx:0.00080,vy:0.00035,s:1.05},
+      {x:0.74,y:0.38,vx:-0.00065,vy:0.00075,s:0.92},
+      {x:0.48,y:0.74,vx:0.00050,vy:-0.00055,s:0.80},
+    ];
+  }
+  layoutNames();
 }
 
 function hsl(h,s,l){
-  const hp=((h%360)+360)%360;
-  const sp=s/100;
-  const lp=l/100;
+  const hp=((h%360)+360)%360,sp=s/100,lp=l/100;
   const k=n=>(n+hp/30)%12;
   const a=sp*Math.min(lp,1-lp);
   const f=n=>lp-a*Math.max(-1,Math.min(k(n)-3,9-k(n),1));
-  return[ Math.round(f(0)*255), Math.round(f(8)*255), Math.round(f(4)*255) ];
+  return[Math.round(f(0)*255),Math.round(f(8)*255),Math.round(f(4)*255)];
 }
 
 function noise(x,y,s){
-  return Math.sin(x*s+t*0.7)*Math.cos(y*s*0.6-t*0.35)+Math.sin((x+y)*s*0.48+t*0.85)*0.42;
+  return Math.sin(x*s+t*0.7)*Math.cos(y*s*0.6-t*0.35)+Math.sin((x+y)*s*0.48+t*0.9)*0.42;
 }
 
 function updateWells(){
   for(const w of wells){
-    w.x+=w.vx;
-    w.y+=w.vy;
+    w.x+=w.vx;w.y+=w.vy;
     w.vx+=(0.5-w.x)*0.00004;
     w.vy+=(0.5-w.y)*0.00004;
     if(w.x<0.06||w.x>0.94)w.vx*=-0.9;
@@ -358,82 +154,253 @@ function updateWells(){
   }
 }
 
-function draw(){
+// precompute a lookup: cell -> experiment index and letter index
+// rebuilt each frame because fast enough and handles resize
+function cellNameLookup(){
+  const map=new Int16Array(cols*rows*2);
+  map.fill(-1);
+  for(let i=0;i<experiments.length;i++){
+    const exp=experiments[i];
+    for(let k=0;k<exp.width;k++){
+      const c=exp.col+k;
+      const r=exp.row;
+      if(c<0||c>=cols||r<0||r>=rows)continue;
+      const idx=(r*cols+c)*2;
+      map[idx]=i;
+      map[idx+1]=k;
+    }
+  }
+  return map;
+}
+
+function findHover(){
+  const ccol=clientX/CW;
+  const crow=clientY/CH;
+  let best=-1,bestDist=Infinity;
+  for(let i=0;i<experiments.length;i++){
+    const exp=experiments[i];
+    const cx=exp.col+exp.width/2;
+    const cy=exp.row+0.5;
+    const dx=ccol-cx;
+    const dy=(crow-cy)*2.2;  // vertical bias so rows are easier to target
+    const inside=(crow>=exp.row-1.2 && crow<=exp.row+1.2 &&
+                  ccol>=exp.col-1 && ccol<=exp.col+exp.width+1);
+    if(inside){
+      const d=dx*dx+dy*dy;
+      if(d<bestDist){bestDist=d;best=i;}
+    }
+  }
+  return best;
+}
+
+function updateGlitches(){
+  // spawn tears
+  if(Math.random()<0.09){
+    tears.push({
+      row:Math.floor(Math.random()*rows),
+      height:1+Math.floor(Math.random()*4),
+      shift:Math.floor(Math.random()*24)-12,
+      life:3+Math.floor(Math.random()*9)
+    });
+  }
+  // dive escalates glitch rate
+  if(diveBoost>0&&Math.random()<0.3*diveBoost){
+    tears.push({
+      row:Math.floor(Math.random()*rows),
+      height:2+Math.floor(Math.random()*6),
+      shift:Math.floor(Math.random()*40)-20,
+      life:4+Math.floor(Math.random()*8)
+    });
+  }
+  rowShift.fill(0);
+  tears=tears.filter(tr=>{
+    tr.life--;
+    if(tr.life<=0)return false;
+    for(let r=tr.row;r<tr.row+tr.height&&r<rows;r++){
+      if(r>=0)rowShift[r]=tr.shift;
+    }
+    return true;
+  });
+  // occasional hue flash
+  if(hueFlash>0)hueFlash*=0.82;
+  if(Math.random()<0.01)hueFlash=1;
+  // chromatic flash
+  if(chromFlash>0)chromFlash*=0.78;
+  if(Math.random()<0.008)chromFlash=1;
+  // name flicker — briefly re-corrupt hovered names
+  if(nameFlicker>0)nameFlicker*=0.85;
+  if(current>=0&&Math.random()<0.02)nameFlicker=1;
+}
+
+function frame(){
   t+=0.017;
-  pmx+=(mx-pmx)*0.06;
-  pmy+=(my-pmy)*0.06;
+  pmx+=(mx-pmx)*0.08;
+  pmy+=(my-pmy)*0.08;
   updateWells();
+  updateGlitches();
+  if(diving)diveBoost=Math.min(1,diveBoost+0.035);
+
+  current=diving?current:findHover();
+  cursor.classList.toggle('hot',current>=0);
 
   ctx.fillStyle='#040503';
   ctx.fillRect(0,0,W,H);
 
-  const cw=CELL*0.58;
-  const ch=CELL*1.04;
-  const focus=(current+1)/experiments.length;
+  const nameMap=cellNameLookup();
 
   for(let r=0;r<rows;r++){
     for(let c=0;c<cols;c++){
       const idx=r*cols+c;
       const fx=c/cols;
       const fy=r/rows;
-      let en=Math.abs(noise(fx,fy,5))*0.16;
+      let en=Math.abs(noise(fx,fy,5))*0.18;
 
       for(const w of wells){
-        const dx=fx-w.x;
-        const dy=fy-w.y;
-        const d=Math.sqrt(dx*dx+dy*dy)+0.025;
-        en+=w.s/(d*11+0.8)*0.42;
+        const dx=fx-w.x,dy=fy-w.y;
+        const d=Math.sqrt(dx*dx+dy*dy)+0.022;
+        en+=w.s/(d*11+0.7)*0.42;
       }
 
       const md=Math.sqrt((fx-pmx)*(fx-pmx)+(fy-pmy)*(fy-pmy))+0.03;
-      en+=0.28/(md*15+0.7);
-      en+=Math.sin((fx*6+fy*4+t*0.7+focus*4))*0.06+0.06;
+      en+=0.30/(md*15+0.7);
 
-      field[idx]=field[idx]*0.83+en*0.17;
-      const norm=Math.max(0,Math.min(field[idx]/1.08,1));
-      if(norm<0.12)continue;
-
-      let glyph;
-      if(norm<0.25)glyph=DUST[Math.floor(norm*DUST.length*4)%DUST.length];
-      else if(norm<0.52)glyph=THREAD[Math.floor((noise(fx,fy,7)+1)*THREAD.length)%THREAD.length];
-      else if(norm<0.84)glyph=WEAVE[Math.floor(norm*WEAVE.length)%WEAVE.length];
-      else glyph=NODE[Math.floor((t*2+c*0.1+r*0.07)%NODE.length)];
-
-      if(norm>0.42)glyph+=ABOVE[Math.floor((t*2+c+r)%ABOVE.length)];
-      if(norm>0.72)glyph+=BELOW[Math.floor((t*1.4+c*2+r)%BELOW.length)];
-
-      const rgb=hsl(114+noise(fx,fy,3)*16+focus*18,18+norm*18,8+norm*28);
-      const near=Math.sqrt((fx-pmx)*(fx-pmx)+(fy-pmy)*(fy-pmy));
-      if(near<0.07){
-        const boost=1-near/0.07;
-        rgb[0]=Math.min(255,rgb[0]+boost*36);
-        rgb[1]=Math.min(255,rgb[1]+boost*48);
-        rgb[2]=Math.min(255,rgb[2]+boost*24);
+      if(diveBoost>0){
+        const cx=fx-0.5,cy=fy-0.5;
+        const d=Math.sqrt(cx*cx+cy*cy)+0.03;
+        en+=Math.max(0,0.9*diveBoost*Math.sin(d*36-t*8))*0.9;
+        en+=diveBoost*0.7/(d*5+0.4);
       }
 
+      field[idx]=field[idx]*0.82+en*0.18;
+      const norm=Math.max(0,Math.min(field[idx]/1.1,1));
+
+      const nameIdx=nameMap[idx*2];
+      const letterIdx=nameMap[idx*2+1];
+      const isName=nameIdx>=0;
+      const isHoveredName=isName && nameIdx===current;
+
+      let glyph,rgb;
+
+      if(isHoveredName){
+        glyph=experiments[nameIdx].title[letterIdx];
+        const flicker=nameFlicker>0.4;
+        if(glyph!==' '){
+          if(flicker){
+            for(let z=0;z<2;z++)glyph+=ABOVE[Math.floor(Math.random()*ABOVE.length)];
+            if(Math.random()<0.5)glyph+=STRIKE[Math.floor(Math.random()*STRIKE.length)];
+          }else if(Math.random()<0.22){
+            glyph+=ABOVE[Math.floor(Math.random()*ABOVE.length)];
+          }
+        }
+        const hue=flicker?(114+Math.random()*30):(46+Math.sin(t*3+letterIdx*0.3)*4);
+        const light=flicker?(48+Math.random()*18):68;
+        rgb=hsl(hue,62,light);
+      }else if(isName){
+        // corrupted letter — reads like field noise
+        glyph=experiments[nameIdx].title[letterIdx];
+        if(glyph!==' '){
+          const heavy=2+Math.floor(Math.random()*2);
+          for(let z=0;z<heavy;z++)glyph+=ABOVE[Math.floor(Math.random()*ABOVE.length)];
+          for(let z=0;z<2;z++)glyph+=BELOW[Math.floor(Math.random()*BELOW.length)];
+          if(Math.random()<0.35)glyph+=STRIKE[Math.floor(Math.random()*STRIKE.length)];
+        }
+        // color: stay within field green range so letter blends
+        const blend=12+norm*18+Math.random()*6;
+        rgb=hsl(114+noise(fx,fy,3)*12, 18+norm*16, blend);
+      }else{
+        if(norm<0.1)continue;
+        if(norm<0.24)glyph=DUST[Math.floor(norm*DUST.length*4)%DUST.length];
+        else if(norm<0.50)glyph=THREAD[Math.floor((noise(fx,fy,7)+1)*THREAD.length)%THREAD.length];
+        else if(norm<0.82)glyph=WEAVE[Math.floor(norm*WEAVE.length)%WEAVE.length];
+        else glyph=NODE[Math.floor((t*2+c*0.1+r*0.07)%NODE.length)];
+        if(norm>0.42)glyph+=ABOVE[Math.floor((t*2+c+r)%ABOVE.length)];
+        if(norm>0.72)glyph+=BELOW[Math.floor((t*1.4+c*2+r)%BELOW.length)];
+        // random strike flecks
+        if(Math.random()<0.004+diveBoost*0.02)glyph+=STRIKE[Math.floor(Math.random()*STRIKE.length)];
+        const hueShift=hueFlash>0.3?(hueFlash*180):0;
+        rgb=hsl(114+noise(fx,fy,3)*16+diveBoost*50+hueShift,20+norm*22,8+norm*28+diveBoost*14);
+      }
+
+      // mouse-proximity brightness lift for everything
+      const near=Math.sqrt((fx-pmx)*(fx-pmx)+(fy-pmy)*(fy-pmy));
+      if(near<0.09){
+        const boost=(1-near/0.09);
+        rgb[0]=Math.min(255,rgb[0]+boost*(isHoveredName?60:32));
+        rgb[1]=Math.min(255,rgb[1]+boost*(isHoveredName?58:46));
+        rgb[2]=Math.min(255,rgb[2]+boost*(isHoveredName?18:24));
+      }
+
+      const xshift=rowShift[r]*CW;
+      if(chromFlash>0.2&&isHoveredName){
+        ctx.fillStyle=`rgba(255,80,80,${chromFlash*0.7})`;
+        ctx.fillText(glyph,c*CW+xshift-2,r*CH);
+        ctx.fillStyle=`rgba(80,200,255,${chromFlash*0.7})`;
+        ctx.fillText(glyph,c*CW+xshift+2,r*CH);
+      }
       ctx.fillStyle=`rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
-      ctx.fillText(glyph,c*cw,r*ch);
+      ctx.fillText(glyph,c*CW+xshift,r*CH);
     }
   }
 
-  requestAnimationFrame(draw);
+  // occasional scanline sweep
+  if(Math.random()<0.02){
+    const y=Math.random()*H;
+    const g=ctx.createLinearGradient(0,y-2,0,y+2);
+    g.addColorStop(0,'rgba(227,243,194,0)');
+    g.addColorStop(0.5,'rgba(227,243,194,0.12)');
+    g.addColorStop(1,'rgba(227,243,194,0)');
+    ctx.fillStyle=g;
+    ctx.fillRect(0,y-2,W,4);
+  }
+
+  requestAnimationFrame(frame);
+}
+
+function dive(file){
+  if(diving)return;
+  diving=true;
+  diveBoost=0.02;
+  veil.classList.add('on');
+  setTimeout(()=>{window.location.href=file;},540);
 }
 
 document.addEventListener('mousemove',e=>{
-  mx=e.clientX/W;
-  my=e.clientY/H;
+  clientX=e.clientX;clientY=e.clientY;
+  cursor.style.transform=`translate3d(${clientX}px,${clientY}px,0) translate(-50%,-50%)`;
+  mx=clientX/W;my=clientY/H;
+});
+document.addEventListener('touchmove',e=>{
+  const tch=e.touches[0];if(!tch)return;
+  clientX=tch.clientX;clientY=tch.clientY;
+  cursor.style.transform=`translate3d(${clientX}px,${clientY}px,0) translate(-50%,-50%)`;
+  mx=clientX/W;my=clientY/H;
+},{passive:true});
+document.addEventListener('click',()=>{
+  if(diving)return;
+  if(current>=0)dive(experiments[current].file);
+});
+document.addEventListener('touchend',()=>{
+  if(diving)return;
+  if(current>=0)dive(experiments[current].file);
+});
+document.addEventListener('keydown',e=>{
+  if(diving)return;
+  if(/^[1-9]$/.test(e.key)){
+    const idx=Number(e.key)-1;
+    if(idx<experiments.length)dive(experiments[idx].file);
+  }else if(e.key==='0'&&experiments.length>=10){
+    dive(experiments[9].file);
+  }
 });
 
-document.addEventListener('touchmove',e=>{
-  const touch=e.touches[0];
-  if(!touch)return;
-  mx=touch.clientX/W;
-  my=touch.clientY/H;
-},{passive:true});
-
 window.addEventListener('resize',resize);
+window.addEventListener('pageshow',()=>{
+  diving=false;
+  diveBoost=0;
+  veil.classList.remove('on');
+});
 resize();
-draw();
+frame();
 </script>
 </body>
 </html>

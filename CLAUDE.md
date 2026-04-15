@@ -38,8 +38,17 @@ Every experiment follows the same structure:
 | `zalgo_vortex.html` / `zalgo_vortex (1).html` | Energy field from multiple orbiting vortices + sinusoidal noise; click spawns new vortices (max 5) |
 | `fractal.html` | Burning Ship fractal with gravitational lens distortion near mouse, glitch tear lines, click shockwave |
 | `dejong_organism.html` | De Jong strange attractor — runs 18k+4k iterations/frame, accumulates to `grid[]` + `colorGrid[]`, both decay each frame |
-| `mycelium_network.html` | Agent-based hyphal growth: stigmergy (trail following), branching, fusion at dense nodes, chemotaxis toward mouse |
-| `physarum_zalgo.html` | Physarum polycephalum (slime mold): 4000 agents sense pheromone left/center/right, deposit + diffuse + decay each frame |
+| `mycelium_network.html` | Agent-based hyphal growth: stigmergy (trail following), branching, fusion at dense nodes, chemotaxis toward mouse; Web Audio synthesis driven by trail density |
+| `physarum_zalgo.html` | Physarum polycephalum (slime mold): 4000 agents sense pheromone left/center/right, deposit + diffuse + decay each frame; Web Audio synthesis |
+| `physarum_zalgo_grainfield.html` | Physarum variant with granular audio: loads `.ogg` sample files, routes density tiers (dust/thread/node/shard) to separate `GainNode` buses through a shared reverb/delay space |
+| `reaction_diffusion.html` | Gray–Scott reaction-diffusion on two chemical fields `a`/`b`; box-drawing characters selected by gradient direction |
+| `charsort.html` | Pixel-sort-style effect: brightness field sorted column-wise each frame, sorted output mapped through a density ramp with Zalgo stacking |
+| `fibonacci_sphere.html` | 1700 points distributed on a sphere via golden angle; projected to grid, accumulates `energy`/`depthField`/`hueField`; click sends radial pulses |
+| `my-heart-is-a-hexadecimal-code-waiting-to-be-corrupted.html` | Heart curve (implicit `p³ - x²y³ ≤ 0`) with progressive corruption stages; hex digits + Zalgo marks; poem lines render in a beat-synced overlay; Web Audio synthesis |
+| `the-line-v3.html` | Scrollable timeline of 16 communication eras (cave → live-code); each era has a character set, color, and body copy in a fixed HTML sidebar panel; canvas background shifts with current era |
+| `the-line-v4.html` | Timeline piece with persistence map (`Float32Array`): cells stay bright after the mouse cursor passes; `scrollY` drives era transitions via `wheel`/`touch` |
+| `dummy_os.html` | Fake terminal OS with floating windows (process list, filesystem tree, log stream, memory map); no simulation state — all output is procedurally generated text |
+| `index.html` | Gallery landing page listing all experiments with links; not a canvas experiment |
 
 **Interaction model (consistent across all files):**
 - `mousemove` / `touchmove` — updates `mx`/`my`
@@ -53,3 +62,16 @@ Every experiment follows the same structure:
 - `dejong_organism.html` runs a second attractor with slightly perturbed params each frame for texture variety
 - `mycelium_network.html` caps total hyphae at 2000 and respawns near mouse at low probability each frame; hyphae carry `gen` depth (max 8) to limit branch explosion
 - `fractal.html` uses a `tears[]` array for glitch horizontal displacement lines; tears spawn randomly each frame and decay over ~8–15 ticks
+
+**Web Audio pattern (physarum_zalgo_grainfield, mycelium_network, physarum_zalgo, hex heart):**
+- `AudioContext` is created on first user gesture to satisfy autoplay policy; all synthesis gated behind `audioReady` flag
+- Multiple `GainNode` buses correspond to visual density tiers; a shared reverb convolver + feedback delay sits at the master output
+- `physarum_zalgo_grainfield.html` loads external `.ogg` sample files via `fetch` + `decodeAudioData`; sample paths are declared as a `SAMPLE_PATHS` object at the top of the script
+
+**HTML overlay panels (the-line-v3, the-line-v4):**
+- Some pieces mix a canvas background with fixed-position HTML panels (sidebar reader, bottom player dock, autoplay prompt)
+- The `--accent` CSS custom property is updated from JS each frame to tint all overlay UI to match the current era's color
+- These files are not pure-canvas; DOM manipulation runs alongside `requestAnimationFrame`
+
+**`renders/` directory:**
+- Contains pre-recorded `.mp4` exports of each experiment (story format, 10–20 s) used for social sharing; not part of the browser experiments themselves
