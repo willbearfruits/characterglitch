@@ -21,7 +21,7 @@ let mx=0.5,my=0.5;
 let t=0;
 let hyphae=[];
 let started=false;
-let isMobile=false,maxHyphae=2000,initialSpores=7,clickSpores=5,grainCountScale=1,mobileSpreadScale=1,mobileStereoScale=1,mobileGainScale=1;
+let isMobile=false,maxHyphae=1600,initialSpores=6,clickSpores=4,grainCountScale=1,mobileSpreadScale=1,mobileStereoScale=1,mobileGainScale=1;
 let actx,masterGain,tipBus,threadBus,branchBus,nodeBus,pulseBus,audioReady=false;
 let delaySend,spaceDelay,delayFeedback,delayFilter,delayWet;
 let driveHP,drivePre,driveShaper,driveLP,driveWet;
@@ -409,9 +409,9 @@ function resize(){
   W=window.innerWidth;H=window.innerHeight;
   isMobile=window.matchMedia('(pointer: coarse)').matches||Math.min(W,H)<700;
   CELL=isMobile?12:10;
-  maxHyphae=isMobile?1200:2000;
-  initialSpores=isMobile?5:7;
-  clickSpores=isMobile?3:5;
+  maxHyphae=isMobile?900:1600;
+  initialSpores=isMobile?4:6;
+  clickSpores=isMobile?2:4;
   grainCountScale=isMobile?0.62:1;
   mobileSpreadScale=isMobile?0.8:1;
   mobileStereoScale=isMobile?0.42:1;
@@ -476,7 +476,7 @@ function frame(){
     const hy=hyphae[h];
     if(hy.energy<=0)continue;
     hy.age++;
-    hy.energy-=0.26+growthRamp*0.18;
+    hy.energy-=0.34+growthRamp*0.24;
 
     // chemotaxis: bend toward mouse
     const dx=mxg-hy.x,dy=myg-hy.y;
@@ -523,7 +523,7 @@ function frame(){
     // deposit trail
     trail[idx]=Math.min(trail[idx]+1.2,8);
     age[idx]=0;
-    density[idx]+=0.15;
+    density[idx]+=0.12;
 
     // direction for character selection
     const d8=Math.round(((hy.angle%(2*Math.PI))+(2*Math.PI))%(2*Math.PI)/(Math.PI/4))%8;
@@ -561,7 +561,7 @@ function frame(){
         branchProb:hy.branchProb*0.7,
         age:0,gen:hy.gen+1
       });
-      hy.energy*=0.7;
+      hy.energy*=0.6;
     }
 
     if(hy.energy>0)newHyphae.push(hy);
@@ -579,9 +579,9 @@ function frame(){
 
   // age and decay
   for(let i=0;i<cols*rows;i++){
-    age[i]+=0.008;
-    trail[i]*=0.997;
-    density[i]*=0.999;
+    age[i]+=0.01;
+    trail[i]*=0.994;
+    density[i]*=0.9975;
     // pulse propagation
     if(pulse[i]>0.1){
       pulse[i]*=0.92;
