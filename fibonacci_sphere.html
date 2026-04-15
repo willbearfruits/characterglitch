@@ -2,9 +2,10 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>
 *{margin:0;padding:0}
-body{background:#06050a;overflow:hidden;cursor:none}
+body{background:#06050a;overflow:hidden;touch-action:none;cursor:none}
 canvas{display:block}
 </style>
 </head>
@@ -14,12 +15,12 @@ canvas{display:block}
 const cv=document.getElementById('c');
 const ctx=cv.getContext('2d');
 
-const CELL=13;
-const N=1700;
+let CELL=13;
+let N=1700;
 const GOLDEN_ANGLE=Math.PI*(3-Math.sqrt(5));
 const PHI=(1+Math.sqrt(5))/2;
 
-let W,H,cols,rows;
+let W,H,cols,rows,DPR=1;
 let mx=0.5,my=0.5,pmx=0.5,pmy=0.5;
 let t=0;
 let zoom=1.18;
@@ -27,6 +28,9 @@ let targetZoom=1.18;
 let energy,depthField,hueField,angleField;
 let bx,by,bz,seed;
 let pulses=[];
+let pinchStart=null;
+let touchStartPos=null;
+let isTouch=false;
 
 const ABOVE=['\u0300','\u0301','\u0302','\u0303','\u0307','\u0308','\u030A','\u030C','\u0311'];
 const BELOW=['\u0323','\u0324','\u0325','\u0330','\u0331','\u0332','\u0347','\u0348'];
@@ -58,7 +62,17 @@ function initPoints(){
 
 function resize(){
   W=window.innerWidth;H=window.innerHeight;
-  cv.width=W;cv.height=H;
+  DPR=Math.max(1,Math.min(window.devicePixelRatio||1,2));
+  // adaptive point count + cell size for small screens
+  const small=Math.min(W,H)<600;
+  const tiny=Math.min(W,H)<420;
+  N=tiny?500:(small?800:1700);
+  CELL=tiny?12:(small?13:13);
+  cv.width=Math.floor(W*DPR);
+  cv.height=Math.floor(H*DPR);
+  cv.style.width=W+'px';
+  cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
   cols=Math.floor(W/(CELL*0.58));
   rows=Math.floor(H/CELL);
   energy=new Float32Array(cols*rows);
@@ -67,6 +81,7 @@ function resize(){
   angleField=new Float32Array(cols*rows);
   ctx.font=CELL+'px Courier New';
   ctx.textBaseline='top';
+  initPoints();
 }
 
 function hsl(h,s,l){
@@ -277,27 +292,20 @@ function frame(){
     }
   }
 
-  const curX=pmx*W,curY=pmy*H;
-  let cur='\u2316';
-  if(pulses.length)cur+=ABOVE[Math.floor(t*4)%ABOVE.length];
-  ctx.fillStyle='rgba(235,220,150,0.7)';
-  ctx.font='14px Courier New';
-  ctx.fillText(cur,curX-5,curY-8);
-  ctx.font=CELL+'px Courier New';
+  if(!isTouch){
+    const curX=pmx*W,curY=pmy*H;
+    let cur='\u2316';
+    if(pulses.length)cur+=ABOVE[Math.floor(t*4)%ABOVE.length];
+    ctx.fillStyle='rgba(235,220,150,0.7)';
+    ctx.font='14px Courier New';
+    ctx.fillText(cur,curX-5,curY-8);
+    ctx.font=CELL+'px Courier New';
+  }
 
   requestAnimationFrame(frame);
 }
 
-document.addEventListener('mousemove',e=>{mx=e.clientX/W;my=e.clientY/H});
-document.addEventListener('touchmove',e=>{
-  e.preventDefault();
-  mx=e.touches[0].clientX/W;
-  my=e.touches[0].clientY/H;
-},{passive:false});
-
-document.addEventListener('click',e=>{
-  const px=e.clientX/W;
-  const py=e.clientY/H;
+function spawnPulse(px,py){
   for(let i=0;i<3;i++){
     pulses.push({
       x:px,
@@ -310,6 +318,16 @@ document.addEventListener('click',e=>{
     });
   }
   if(pulses.length>12)pulses.splice(0,pulses.length-12);
+}
+
+document.addEventListener('mousemove',e=>{
+  if(isTouch)return;
+  mx=e.clientX/W;my=e.clientY/H;
+});
+
+document.addEventListener('click',e=>{
+  if(isTouch)return;
+  spawnPulse(e.clientX/W,e.clientY/H);
 });
 
 document.addEventListener('wheel',e=>{
@@ -317,8 +335,57 @@ document.addEventListener('wheel',e=>{
   targetZoom=Math.max(0.35,Math.min(3.85,targetZoom-e.deltaY*0.00125));
 },{passive:false});
 
+function pinchDistance(t0,t1){
+  const dx=t0.clientX-t1.clientX;
+  const dy=t0.clientY-t1.clientY;
+  return Math.hypot(dx,dy);
+}
+
+document.addEventListener('touchstart',e=>{
+  isTouch=true;
+  if(e.touches.length===2){
+    pinchStart={d:pinchDistance(e.touches[0],e.touches[1]),zoom:targetZoom};
+    touchStartPos=null;
+  }else if(e.touches.length===1){
+    const t0=e.touches[0];
+    touchStartPos={x:t0.clientX,y:t0.clientY,time:performance.now()};
+    mx=t0.clientX/W;my=t0.clientY/H;
+  }
+},{passive:false});
+
+document.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length===2 && pinchStart){
+    const d=pinchDistance(e.touches[0],e.touches[1]);
+    const ratio=d/pinchStart.d;
+    targetZoom=Math.max(0.35,Math.min(3.85,pinchStart.zoom*ratio));
+  }else if(e.touches.length===1){
+    const t0=e.touches[0];
+    mx=t0.clientX/W;my=t0.clientY/H;
+    if(touchStartPos){
+      const dx=t0.clientX-touchStartPos.x;
+      const dy=t0.clientY-touchStartPos.y;
+      if(Math.hypot(dx,dy)>14)touchStartPos=null;  // no longer a tap
+    }
+  }
+},{passive:false});
+
+document.addEventListener('touchend',e=>{
+  if(e.touches.length<2)pinchStart=null;
+  if(touchStartPos && e.changedTouches.length>0){
+    const ct=e.changedTouches[0];
+    const dx=ct.clientX-touchStartPos.x;
+    const dy=ct.clientY-touchStartPos.y;
+    const dt=performance.now()-touchStartPos.time;
+    if(Math.hypot(dx,dy)<14 && dt<500){
+      spawnPulse(ct.clientX/W,ct.clientY/H);
+    }
+    touchStartPos=null;
+  }
+});
+
 window.addEventListener('resize',resize);
-initPoints();
+window.addEventListener('orientationchange',()=>setTimeout(resize,120));
 resize();
 frame();
 </script>
