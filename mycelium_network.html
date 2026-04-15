@@ -14,13 +14,14 @@ canvas{display:block}
 <script>
 const cv=document.getElementById('c');
 const ctx=cv.getContext('2d');
-const CELL=10;
+let CELL=10;
 let W,H,cols,rows;
 let trail,age,dir,density,pulse;
 let mx=0.5,my=0.5;
 let t=0;
 let hyphae=[];
 let started=false;
+let isMobile=false,maxHyphae=2000,initialSpores=7,clickSpores=5,grainCountScale=1,mobileSpreadScale=1,mobileStereoScale=1,mobileGainScale=1;
 let actx,masterGain,tipBus,threadBus,branchBus,nodeBus,pulseBus,audioReady=false;
 let delaySend,spaceDelay,delayFeedback,delayFilter,delayWet;
 let driveHP,drivePre,driveShaper,driveLP,driveWet;
@@ -89,31 +90,31 @@ async function loadSampleBuffers(){
 function initAudio(){
   actx=new (window.AudioContext||window.webkitAudioContext)();
   masterGain=actx.createGain();
-  masterGain.gain.value=0.82;
+  masterGain.gain.value=0.82*mobileGainScale;
 
   const comp=actx.createDynamicsCompressor();
-  comp.threshold.value=-32;
+  comp.threshold.value=isMobile?-36:-32;
   comp.knee.value=26;
-  comp.ratio.value=8;
+  comp.ratio.value=isMobile?10:8;
   comp.attack.value=0.004;
-  comp.release.value=0.15;
+  comp.release.value=isMobile?0.18:0.15;
 
   // tier buses — each has its own baseline gain so the mix stays balanced
-  tipBus=actx.createGain();    tipBus.gain.value=0.62;
-  threadBus=actx.createGain(); threadBus.gain.value=0.82;
-  branchBus=actx.createGain(); branchBus.gain.value=0.90;
-  nodeBus=actx.createGain();   nodeBus.gain.value=1.04;  // node tier loudest so voice bleeds through
-  pulseBus=actx.createGain();  pulseBus.gain.value=0.76;
+  tipBus=actx.createGain();    tipBus.gain.value=0.62*mobileGainScale;
+  threadBus=actx.createGain(); threadBus.gain.value=0.82*mobileGainScale;
+  branchBus=actx.createGain(); branchBus.gain.value=0.90*mobileGainScale;
+  nodeBus=actx.createGain();   nodeBus.gain.value=1.04*mobileGainScale;  // node tier loudest so voice bleeds through
+  pulseBus=actx.createGain();  pulseBus.gain.value=0.76*mobileGainScale;
 
   // shared space (delay) send so voice fragments hang
-  delaySend=actx.createGain();   delaySend.gain.value=0.28;
+  delaySend=actx.createGain();   delaySend.gain.value=(isMobile?0.22:0.28)*mobileGainScale;
   spaceDelay=actx.createDelay(1.6);
   spaceDelay.delayTime.value=0.28;
-  delayFeedback=actx.createGain();delayFeedback.gain.value=0.38;
+  delayFeedback=actx.createGain();delayFeedback.gain.value=isMobile?0.3:0.38;
   delayFilter=actx.createBiquadFilter();
   delayFilter.type='lowpass';
   delayFilter.frequency.value=2200;
-  delayWet=actx.createGain();    delayWet.gain.value=0.26;
+  delayWet=actx.createGain();    delayWet.gain.value=(isMobile?0.2:0.26)*mobileGainScale;
   driveHP=actx.createBiquadFilter();
   driveHP.type='highpass';
   driveHP.frequency.value=180;
@@ -126,7 +127,7 @@ function initAudio(){
   driveLP.type='lowpass';
   driveLP.frequency.value=4200;
   driveWet=actx.createGain();
-  driveWet.gain.value=0.015;
+  driveWet.gain.value=(isMobile?0.01:0.015)*mobileGainScale;
 
   // routing
   [tipBus,threadBus,branchBus,nodeBus,pulseBus].forEach(b=>{
@@ -288,7 +289,7 @@ function updateAudio(stats){
   const sparseCorner=Math.pow(clamp((1-mx)*my,0,1),1.35);
   const shortCorner=Math.pow(clamp((1-mx)*(1-my),0,1),1.35);
   const highCorner=Math.pow(clamp(mx*my,0,1),1.35);
-  const stereoWidth=0.16+Math.abs(mousePan)*0.9;
+  const stereoWidth=(0.16+Math.abs(mousePan)*0.9)*mobileStereoScale;
   const grainStretch=Math.max(0.18,0.38+my*2.25-shortCorner*1.3);
   const grainScatter=0.06+(1-my)*0.58+activity*0.12;
   const rateTilt=(1.42-my*0.74)*(1+highCorner*0.16);
@@ -312,39 +313,39 @@ function updateAudio(stats){
 
     // TIP: short clicky fragments — fire often when there are fresh growing tips
     if(tips>0.06||freshness>0.1){
-      const n=Math.max(1,Math.floor((1+Math.floor(tips*3+freshness*2+Math.random()*1.5))*(1-sparseCorner*0.72)));
+      const n=Math.max(1,Math.floor((1+Math.floor(tips*3+freshness*2+Math.random()*1.5))*(1-sparseCorner*0.72)*grainCountScale));
       for(let i=0;i<n;i++){
         const dur=(GRAIN_PROFILES.tip.durMin+Math.random()*(GRAIN_PROFILES.tip.durMax-GRAIN_PROFILES.tip.durMin))*(0.45+grainStretch*0.62);
         scheduleVoiceGrain('tip',now+i*(0.008+Math.random()*0.014),0.86+tips*0.62,clamp(pan+(Math.random()-0.5)*stereoWidth*1.08,-1,1),{
           dur,
           rate:(GRAIN_PROFILES.tip.rateMin+Math.random()*(GRAIN_PROFILES.tip.rateMax-GRAIN_PROFILES.tip.rateMin))*rateTilt,
-          offsetSpread:grainScatter,
+          offsetSpread:grainScatter*mobileSpreadScale,
           volScale:1.25
         });
       }
     }
 
     // THREAD: the backbone texture — moderate rate, always some
-    const threadN=Math.max(1,Math.floor((1+Math.floor(growth*3+activity*1.5))*(1-sparseCorner*0.76)));
+    const threadN=Math.max(1,Math.floor((1+Math.floor(growth*3+activity*1.5))*(1-sparseCorner*0.76)*grainCountScale));
     for(let i=0;i<threadN;i++){
       const dur=(GRAIN_PROFILES.thread.durMin+Math.random()*(GRAIN_PROFILES.thread.durMax-GRAIN_PROFILES.thread.durMin))*(0.54+grainStretch*0.72);
       scheduleVoiceGrain('thread',now+i*(0.02+Math.random()*0.026),0.8+growth*0.62,clamp(pan+(Math.random()-0.5)*(0.42+stereoWidth*0.75),-1,1),{
           dur,
           rate:(GRAIN_PROFILES.thread.rateMin+Math.random()*(GRAIN_PROFILES.thread.rateMax-GRAIN_PROFILES.thread.rateMin))*rateTilt,
-          offsetSpread:grainScatter*1.18,
+          offsetSpread:grainScatter*1.18*mobileSpreadScale,
           volScale:1.22
       });
     }
 
     // BRANCH: spoken, longer — fire when branchiness is high
     if(branchiness>0.12&&Math.random()<0.4+branchiness*0.6){
-      const n=Math.max(1,Math.floor((1+Math.floor(branchiness*2))*(1-sparseCorner*0.78)));
+      const n=Math.max(1,Math.floor((1+Math.floor(branchiness*2))*(1-sparseCorner*0.78)*grainCountScale));
       for(let i=0;i<n;i++){
         const dur=(GRAIN_PROFILES.branch.durMin+Math.random()*(GRAIN_PROFILES.branch.durMax-GRAIN_PROFILES.branch.durMin))*(0.72+grainStretch*0.88);
         scheduleVoiceGrain('branch',now+i*(0.05+Math.random()*0.034),0.84+branchiness*0.5,clamp(pan*0.65+(Math.random()-0.5)*(0.34+stereoWidth*0.62),-1,1),{
           dur,
           rate:(GRAIN_PROFILES.branch.rateMin+Math.random()*(GRAIN_PROFILES.branch.rateMax-GRAIN_PROFILES.branch.rateMin))*(1.24-my*0.42),
-          offsetSpread:grainScatter*1.28,
+          offsetSpread:grainScatter*1.28*mobileSpreadScale,
           volScale:1.28
         });
       }
@@ -357,7 +358,7 @@ function updateAudio(stats){
         scheduleVoiceGrain('node',now+0.018,0.92+nodes*0.58,clamp(pan*0.55+(Math.random()-0.5)*(0.28+stereoWidth*0.52),-0.95,0.95),{
           dur,
           rate:(0.82+Math.random()*0.2)*(1.18-my*0.26),
-          offsetSpread:grainScatter*1.52,
+          offsetSpread:grainScatter*1.52*mobileSpreadScale,
           volScale:1.34
         });
         lastNodeVoice=now;
@@ -374,13 +375,13 @@ function updateAudio(stats){
           rate:(0.8+Math.random()*0.18)*(1.12-my*0.22),
           filterFreq:1600+Math.random()*1400,
           volScale:1.52,
-          offsetSpread:grainScatter*1.72
+          offsetSpread:grainScatter*1.72*mobileSpreadScale
         });
         lastVoiceBloom=now;
       }
     }
 
-    nextGrainTime=now+clamp(0.2-activity*0.09-pulses*0.05-branchiness*0.04-(1-my)*0.06+sparseCorner*0.08,0.035,0.28);
+    nextGrainTime=now+clamp(0.2-activity*0.09-pulses*0.05-branchiness*0.04-(1-my)*0.06+sparseCorner*0.08+(isMobile?0.04:0),0.035,0.34);
   }
 
   if(pulseRise>0.025||nodeRise>0.018){
@@ -406,6 +407,15 @@ const NODE='\u25C6\u25C7\u2B22\u2B23\u2726\u2727\u2728\u2729';
 
 function resize(){
   W=window.innerWidth;H=window.innerHeight;
+  isMobile=window.matchMedia('(pointer: coarse)').matches||Math.min(W,H)<700;
+  CELL=isMobile?12:10;
+  maxHyphae=isMobile?1200:2000;
+  initialSpores=isMobile?5:7;
+  clickSpores=isMobile?3:5;
+  grainCountScale=isMobile?0.62:1;
+  mobileSpreadScale=isMobile?0.8:1;
+  mobileStereoScale=isMobile?0.42:1;
+  mobileGainScale=isMobile?0.7:1;
   cv.width=W;cv.height=H;
   cols=Math.floor(W/(CELL*0.58));
   rows=Math.floor(H/CELL);
@@ -419,7 +429,7 @@ function resize(){
   ctx.textBaseline='top';
   hyphae=[];
   // initial spores
-  for(let i=0;i<7;i++) spawnSpore(Math.random(),Math.random());
+  for(let i=0;i<initialSpores;i++) spawnSpore(Math.random(),Math.random());
 }
 
 function spawnSpore(sx,sy){
@@ -450,7 +460,7 @@ function frame(){
     ctx.fillStyle='#06050a';
     ctx.fillRect(0,0,W,H);
     ctx.fillStyle='rgba(180,240,200,0.78)';
-    ctx.fillText('click to germinate',Math.max(18,W*0.5-84),Math.max(18,H*0.5-8));
+    ctx.fillText(isMobile?'tap to germinate':'click to germinate',Math.max(18,W*0.5-(isMobile?72:84)),Math.max(18,H*0.5-8));
     requestAnimationFrame(frame);
     return;
   }
@@ -526,7 +536,7 @@ function frame(){
       pulse[idx]=3;
       hy.energy=0;
       // spawn new directions from node
-      if(hyphae.length+newHyphae.length<2000){
+      if(hyphae.length+newHyphae.length<maxHyphae){
         for(let b=0;b<2;b++){
           newHyphae.push({
             x:hy.x,y:hy.y,
@@ -541,7 +551,7 @@ function frame(){
     }
 
     // branching
-    if(Math.random()<hy.branchProb*(0.35+growthRamp*0.65)&&hy.energy>30&&hyphae.length+newHyphae.length<2000&&hy.gen<8){
+    if(Math.random()<hy.branchProb*(0.35+growthRamp*0.65)&&hy.energy>30&&hyphae.length+newHyphae.length<maxHyphae&&hy.gen<8){
       const side=Math.random()<0.5?1:-1;
       newHyphae.push({
         x:hy.x,y:hy.y,
@@ -708,7 +718,7 @@ document.addEventListener('touchstart',()=>{started=true;bootAudio();},{passive:
 document.addEventListener('click',e=>{
   bootAudio();
   const sx=e.clientX/W,sy=e.clientY/H;
-  for(let i=0;i<5;i++){
+  for(let i=0;i<clickSpores;i++){
     spawnSpore(sx+(Math.random()-0.5)*0.03,sy+(Math.random()-0.5)*0.03);
   }
   // pulse burst
